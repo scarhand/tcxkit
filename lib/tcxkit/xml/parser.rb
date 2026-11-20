@@ -46,15 +46,20 @@ module TcxKit
 
       # SAX callbacks
 
+      NO_ATTRIBUTES = [].freeze
+
+      # How many elements pass between clock checks.
+      CLOCK_INTERVAL = 64
+
       def start_element_namespace(name, attrs = [], _prefix = nil, uri = nil, _namespaces = [])
         raise_source_error
-        check_clock
         @elements += 1
+        check_clock if (@elements % CLOCK_INTERVAL).zero?
         check_limit(:max_elements, @elements) { |max| "More than #{max} elements" }
         depth = @stack.size + 1
         check_limit(:max_depth, depth) { |max| "Elements nested deeper than #{max}" }
 
-        attributes = attrs.map do |attribute|
+        attributes = attrs.empty? ? NO_ATTRIBUTES : attrs.map do |attribute|
           check_limit(:max_text_bytes, attribute.value.bytesize) do |max|
             "Attribute #{short(attribute.localname)} is over the #{max}-byte text limit"
           end

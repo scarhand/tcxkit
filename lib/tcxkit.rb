@@ -9,6 +9,11 @@ require_relative "tcxkit/xml/clock"
 require_relative "tcxkit/xml/element"
 require_relative "tcxkit/xml/source"
 require_relative "tcxkit/xml/parser"
+require_relative "tcxkit/types"
+require_relative "tcxkit/schema"
+require_relative "tcxkit/field"
+require_relative "tcxkit/message"
+require_relative "tcxkit/message_builder"
 require_relative "tcxkit/reader"
 
 # A read-only, streaming parser for Garmin Training Center Database v2 files.

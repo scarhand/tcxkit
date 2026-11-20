@@ -41,7 +41,12 @@ module TcxKit
       def append_text(string)
         return 0 if @children
 
-        (@buffer ||= +"") << string
+        if @buffer.nil?
+          @buffer = string
+        else
+          @buffer = +@buffer if @buffer.frozen?
+          @buffer << string
+        end
         @buffer.bytesize
       end
 

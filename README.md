@@ -2,28 +2,41 @@
 
 A read-only, streaming Ruby parser for Garmin Training Center Database v2 (`.tcx`) files.
 
-**Status: milestone M1 of 4.** The reader reads a whole document safely (limits, DTD refusal, truncation detection) and checks it is TCX v2, but yields no messages yet; they arrive in M2. The full API is in [`SPECIFICATION.md`](SPECIFICATION.md).
+**Status: milestone M2 of 4.** The reader streams typed messages for every trackpoint, lap, activity and the rest of a TCX v2 document. The `Activity` view arrives in M3. The full API is in [`SPECIFICATION.md`](SPECIFICATION.md).
 
 ```ruby
 require "tcxkit"
 
-begin
-  TcxKit::Reader.new("activity.tcx", limits: { max_seconds: 30 }).each_message { |message| }
-rescue TcxKit::TruncatedFileError, TcxKit::InvalidFileError, TcxKit::UnsupportedFormatError,
-       TcxKit::UnsafeContentError, TcxKit::LimitExceededError => error
-  warn "#{error.class}: #{error.message}" # includes the line and column
+TcxKit::Reader.new("activity.tcx", limits: { max_seconds: 30 }).each_message do |message|
+  case message.name
+  when :trackpoint
+    puts [message.timestamp, message[:latitude_degrees], message[:longitude_degrees], message[:heart_rate_bpm]].inspect
+  when :lap
+    puts "lap #{message.context[:lap]}: #{message[:total_time_seconds]} s, #{message[:distance_meters]} m"
+  end
 end
 ```
 
-TcxKit is a sister project of [fitkit](https://github.com/scarhand/fitkit) (FIT) and [gpxkit](https://github.com/scarhand/gpxkit) (GPX), and shares their API shape. Planned for M2 and M3:
+Every value is a `Field` with the text as written, a typed value, and a reason when the value does not fit the schema:
+
+```ruby
+field = message.field(:heart_rate_bpm)
+field.text            # "0"
+field.value           # nil
+field.invalid_reason  # :out_of_range (heart rates are 1 to 255)
+```
+
+Errors carry the line and column:
+
+```ruby
+rescue TcxKit::TruncatedFileError, TcxKit::InvalidFileError, TcxKit::UnsupportedFormatError,
+       TcxKit::UnsafeContentError, TcxKit::LimitExceededError => error
+```
+
+TcxKit is a sister project of [fitkit](https://github.com/scarhand/fitkit) (FIT) and [gpxkit](https://github.com/scarhand/gpxkit) (GPX), and shares their API shape. The activity view is planned for M3:
 
 ```ruby
 require "tcxkit"
-
-# Low level: one message per trackpoint, lap, activity, ...
-TcxKit::Reader.new("activity.tcx").each_message do |message|
-  puts message[:heart_rate_bpm] if message.name == :trackpoint
-end
 
 # Activity view: sessions, laps and records
 activity = TcxKit::Activity.read("activity.tcx")

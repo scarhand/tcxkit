@@ -96,33 +96,42 @@ Same contract as `FitKit::Reader`:
 
 ### 6.2 Messages
 
-A message is emitted when its element closes, so it carries everything inside it. As in FIT, a lap's trackpoints therefore arrive before the lap, and an activity's laps arrive before the activity.
+A message is emitted when its element closes, so it carries everything inside it. As in FIT, a lap's trackpoints therefore arrive before the lap, and an activity's laps arrive before the activity. Elements in the TCX v2 namespace become messages only where the schema puts them:
 
-| Message name | Element | Fields include |
+| Message name | Element (where) | Fields include |
 |---|---|---|
-| `:trackpoint` | `Trackpoint` | `time`, `latitude_degrees`, `longitude_degrees`, `altitude_meters`, `distance_meters`, `heart_rate_bpm`, `cadence`, `sensor_state`, and from `TPX`: `speed`, `run_cadence`, `watts` (attribute `cadence_sensor`) |
-| `:track` | `Track` | none of its own; marks the end of a track |
-| `:lap` | `Lap` | `start_time` (attribute), `total_time_seconds`, `distance_meters`, `maximum_speed`, `calories`, `average_heart_rate_bpm`, `maximum_heart_rate_bpm`, `intensity`, `cadence`, `trigger_method`, `notes`, and from `LX`: `avg_speed`, `max_bike_cadence`, `avg_run_cadence`, `max_run_cadence`, `steps`, `avg_watts`, `max_watts` |
-| `:creator` | `Creator` | `name`, `unit_id`, `product_id`, `version_major`, `version_minor`, `build_major`, `build_minor`, and the `xsi:type` attribute |
-| `:activity` | `Activity` | `sport` (attribute), `id`, `notes` |
+| `:trackpoint` | `Trackpoint` (in a `Track`) | `time`, `latitude_degrees`, `longitude_degrees`, `altitude_meters`, `distance_meters`, `heart_rate_bpm`, `cadence`, `sensor_state`, and from `TPX`: `speed`, `run_cadence`, `watts`, `cadence_sensor` |
+| `:track` | `Track` (in a lap, transition or course) | none of its own; marks the end of a track |
+| `:lap` | `Lap` (in an activity: `ActivityLap_t`; in a course: `CourseLap_t`) | `start_time`, `total_time_seconds`, `distance_meters`, `maximum_speed`, `calories`, `average_heart_rate_bpm`, `maximum_heart_rate_bpm`, `intensity`, `cadence`, `trigger_method`, `notes`, and from `LX`: `avg_speed`, `max_bike_cadence`, `avg_run_cadence`, `max_run_cadence`, `steps`, `avg_watts`, `max_watts` |
+| `:transition` | `Transition` (in a multisport `NextSport`) | as `:lap` |
+| `:creator` | `Creator` (in an activity or course) | `type` (`xsi:type`), `name`, `unit_id`, `product_id`, `version_major`, `version_minor`, `build_major`, `build_minor` |
+| `:activity` | `Activity` (in `Activities`, `FirstSport` or `NextSport`) | `sport`, `id`, `notes`, and from `Training`: `virtual_partner`, `type`, `interval_workout`, `name` |
 | `:multi_sport_session` | `MultiSportSession` | `id`, `notes` |
-| `:author` | `Author` | `name`, `build_*`, `lang_id`, `part_number` |
-| `:element` | anything else at message level (courses, workouts, folders, unknown) | every child, generically |
-| `:document` | `TrainingCenterDatabase` | none of its own; the last message |
+| `:author` | `Author` | `type`, `name`, `version_major` (in `Build`), `lang_id`, `part_number`, ... |
+| `:course` | `Course` | `name`, `notes` |
+| `:course_point` | `CoursePoint` | `name`, `time`, `latitude_degrees`, `longitude_degrees`, `altitude_meters`, `point_type`, `notes` |
+| `:element` | anything else at message level: `Folders`, `Workouts`, the root's `Extensions`, unknown elements | every leaf inside, untyped |
+| `:document` | `TrainingCenterDatabase` | the root's attributes (such as `xsi:schemaLocation`); always the last message |
 
-Field names are the element's local name in snake_case. A `Value` child takes its parent's name (`HeartRateBpm/Value` becomes `heart_rate_bpm`), and a wrapper such as `Position` or `Extensions/TPX` is dropped from the name but kept in the path.
+Every leaf element and every attribute inside a message, outside the messages nested in it, is one of its fields. `Activities`, `Courses`, `FirstSport` and `NextSport` only group messages. An element with only attributes (`<TPX CadenceSensor="Bike"/>`) gives only its attribute fields, and an empty `Extensions` element is not a field.
+
+Field names are the local name in snake_case. A `Value` element takes its parent's name (`HeartRateBpm/Value` becomes `heart_rate_bpm`). The path keeps every element: `Position/LatitudeDegrees`, `Extensions/TPX/Speed`, `@StartTime`. Paths use local names only, since prefixes are chosen by each file. When names repeat (`Build/Version/VersionMajor` and `Version/VersionMajor`, or the begin and end positions of a course lap), look fields up by path.
+
+`context` places a message: its own index and its ancestors'. `activity`, `multi_sport_session`, `course`, `author` and `element` count across the document; the others count within their parent (`lap` within its activity, `track` within its lap, `trackpoint` within its track).
 
 ```ruby
-message.name                 # :trackpoint
-message.context              # { activity: 0, lap: 2, track: 0, trackpoint: 41 }
-message.line                 # line of the opening tag
-message.fields               # Array of Field, in document order (names can repeat)
-message[:heart_rate_bpm]     # typed value of the first field with that name
+message.name                  # :trackpoint
+message.element_name          # "Trackpoint"
+message.context               # { activity: 0, lap: 2, track: 0, trackpoint: 41 }
+message.line, message.column  # where the element starts
+message.fields                # Array of Field, in document order (names can repeat)
+message[:heart_rate_bpm]      # typed value of the first field with that name
 message["HeartRateBpm/Value"] # lookup by path
 message.field(:heart_rate_bpm)
-message.fields_named(:notes) # every field with that name
-message.attributes           # attributes of the message element itself, as Fields
-message.to_h                 # name => value (first of each name)
+message.fields_named(:notes)  # every field with that name
+message.attributes            # fields for the message element's own attributes
+message.timestamp             # the time field, for trackpoints and course points
+message.to_h                  # name => value (first of each name)
 ```
 
 ### 6.3 Fields
@@ -130,24 +139,29 @@ message.to_h                 # name => value (first of each name)
 ```ruby
 field.name           # :heart_rate_bpm
 field.path           # "HeartRateBpm/Value"
-field.namespace      # TCX v2 or Activity Extension v2 namespace URI
-field.raw_value      # "142", exactly as written (whitespace collapsed per its XSD type)
+field.namespace      # namespace URI of the element or attribute (nil for an unqualified attribute)
+field.text           # " 142 ", exactly as written
+field.raw_value      # "142": the text after the type's whitespace rule
 field.value          # 142, typed; nil when invalid
-field.type           # :unsigned_byte, :double, :date_time, :token, :string, ...
-field.known?         # false for elements this gem does not know
-field.valid?         # false when raw_value does not fit the type or its range
-field.invalid_reason # nil, :not_a_number, :out_of_range, :no_utc_offset, :not_in_enumeration, ...
+field.type           # :positive_byte, :double, :date_time, :sport, :token, :string, :unknown, ...
+field.known?         # false where the schema does not put this element or attribute
+field.valid?
+field.invalid_reason # nil, :empty, :not_a_number, :not_finite, :not_an_integer, :out_of_range,
+                     # :not_a_date_time, :no_utc_offset, :not_in_enumeration, :not_a_boolean
 field.line
 ```
 
-Typing:
+Types come from tables written from the schemas, keyed by path and namespace: `Extensions/TPX/Speed` is typed only when `TPX` and `Speed` are in the Activity Extension v2 namespace, whatever their prefix.
 
-- `xsd:double` → `Float`. Callers that need exact decimals use `BigDecimal(field.raw_value)`.
-- `xsd:unsignedByte`, `unsignedShort`, `unsignedInt` → `Integer`, range-checked.
-- `xsd:dateTime` → `Time` in UTC when the text has `Z` or an offset. Without an offset the value is `nil` and `invalid_reason` is `:no_utc_offset` (decision 1, section 13). Fractional seconds are kept.
-- Enumerations (`Sport_t`, `Intensity_t`, `TriggerMethod_t`, `SensorState_t`, `CadenceSensorType_t`) → `Symbol` in snake_case; a value outside the enumeration keeps its text, `value` is nil and `invalid_reason` is `:not_in_enumeration`.
-- Schema ranges are enforced as validity, not errors: `DegreesLatitude_t` (-90..90), `DegreesLongitude_t` (-180..180), `HeartRateInBeatsPerMinute_t` (≥ 1), `CadenceValue_t` (≤ 254) and the like, each checked against the published schema.
-- Unknown elements: `known?` false, `type` `:string`, `value` is the text.
+- Whitespace: `xsd:string` (such as `Notes`) keeps the text as written; every other type collapses it (XSD `collapse`), so `raw_value` is the collapsed text.
+- `xsd:double` → `Float`. `INF` and `NaN` are not finite (`:not_finite`). Callers that need exact decimals use `BigDecimal(field.raw_value)`.
+- Integer types → `Integer`, range-checked: `unsignedShort`, `unsignedInt`, `positiveByte` (1 to 255, heart rates) and `CadenceValue_t` (0 to 254). A decimal such as `142.0` is `:not_an_integer`.
+- `xsd:dateTime` → `Time` in UTC when the text has `Z` or an offset. Without an offset the value is `nil` and `invalid_reason` is `:no_utc_offset` (decision 1, section 13). Fractional seconds are kept. Impossible dates and times (February 30, hour 24, second 60, offsets beyond 14 hours) are `:not_a_date_time`.
+- `xsd:boolean` → `true` or `false`.
+- Enumerations (`Sport_t`, `Intensity_t`, `TriggerMethod_t`, `SensorState_t`, `CadenceSensorType_t`, `BuildType_t`, `TrainingType_t`) → `Symbol` in snake_case. Matching is exact (`Absent`, not `absent`); anything else is `:not_in_enumeration`.
+- `Token_t` → the collapsed `String`.
+- Ranges are validity, not errors: `DegreesLatitude_t` (-90 to 90), `DegreesLongitude_t` (-180 up to, not including, 180).
+- Unknown elements and attributes: `known?` false, `type` `:unknown`, `value` is the text as written.
 
 ### 6.4 Activity view
 

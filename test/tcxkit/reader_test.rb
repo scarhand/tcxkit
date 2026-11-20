@@ -8,11 +8,19 @@ class ReaderTest < Minitest::Test
     assert_nil Documents.read(Documents.tcx)
   end
 
+  def test_external_iteration
+    enumerator = TcxKit::Reader.new(Documents.fixture("activity.tcx")).each_message
+
+    assert_equal :trackpoint, enumerator.next.name
+    assert_equal :trackpoint, enumerator.next.name
+    assert_equal :track, enumerator.next.name
+  end
+
   def test_each_message_without_a_block_returns_an_enumerator
     enumerator = TcxKit::Reader.new(StringIO.new(Documents.tcx)).each_message
 
     assert_kind_of Enumerator, enumerator
-    assert_equal [], enumerator.to_a
+    assert_equal [:document], enumerator.map(&:name)
   end
 
   def test_skips_whitespace_before_the_xml_declaration
