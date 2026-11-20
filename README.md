@@ -2,9 +2,20 @@
 
 A read-only, streaming Ruby parser for Garmin Training Center Database v2 (`.tcx`) files.
 
-**Status: specification only.** Nothing is parsed yet. The planned API is in [`SPECIFICATION.md`](SPECIFICATION.md); the README will show working examples once milestone M1 lands.
+**Status: milestone M1 of 4.** The reader reads a whole document safely (limits, DTD refusal, truncation detection) and checks it is TCX v2, but yields no messages yet; they arrive in M2. The full API is in [`SPECIFICATION.md`](SPECIFICATION.md).
 
-TcxKit is a sister project of [fitkit](https://github.com/scarhand/fitkit) (FIT) and [gpxkit](https://github.com/scarhand/gpxkit) (GPX), and shares their API shape:
+```ruby
+require "tcxkit"
+
+begin
+  TcxKit::Reader.new("activity.tcx", limits: { max_seconds: 30 }).each_message { |message| }
+rescue TcxKit::TruncatedFileError, TcxKit::InvalidFileError, TcxKit::UnsupportedFormatError,
+       TcxKit::UnsafeContentError, TcxKit::LimitExceededError => error
+  warn "#{error.class}: #{error.message}" # includes the line and column
+end
+```
+
+TcxKit is a sister project of [fitkit](https://github.com/scarhand/fitkit) (FIT) and [gpxkit](https://github.com/scarhand/gpxkit) (GPX), and shares their API shape. Planned for M2 and M3:
 
 ```ruby
 require "tcxkit"
