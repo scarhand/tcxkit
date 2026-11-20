@@ -1,6 +1,6 @@
 # TcxKit — Project Specification
 
-**Status:** Draft for review
+**Status:** Approved by the maintainer on 2026-11-20
 **Project type:** Read-only Ruby library for Garmin Training Center XML (TCX) files
 **Gem name:** `tcxkit` (free on RubyGems on 2026-11-20)
 **Ruby namespace / require path:** `TcxKit` / `require "tcxkit"`
@@ -144,7 +144,7 @@ Typing:
 
 - `xsd:double` → `Float`. Callers that need exact decimals use `BigDecimal(field.raw_value)`.
 - `xsd:unsignedByte`, `unsignedShort`, `unsignedInt` → `Integer`, range-checked.
-- `xsd:dateTime` → `Time` in UTC when the text has `Z` or an offset. Without an offset the value is `nil` and `invalid_reason` is `:no_utc_offset` (see open question 1). Fractional seconds are kept.
+- `xsd:dateTime` → `Time` in UTC when the text has `Z` or an offset. Without an offset the value is `nil` and `invalid_reason` is `:no_utc_offset` (decision 1, section 13). Fractional seconds are kept.
 - Enumerations (`Sport_t`, `Intensity_t`, `TriggerMethod_t`, `SensorState_t`, `CadenceSensorType_t`) → `Symbol` in snake_case; a value outside the enumeration keeps its text, `value` is nil and `invalid_reason` is `:not_in_enumeration`.
 - Schema ranges are enforced as validity, not errors: `DegreesLatitude_t` (-90..90), `DegreesLongitude_t` (-180..180), `HeartRateInBeatsPerMinute_t` (≥ 1), `CadenceValue_t` (≤ 254) and the like, each checked against the published schema.
 - Unknown elements: `known?` false, `type` `:string`, `value` is the text.
@@ -203,7 +203,7 @@ Method names match `FitKit::Activity` wherever the meaning matches. A TCX `Lap` 
 
 `activity.sport` is `:running`, `:biking` or `:other`, the TCX `Sport_t` value. Mapping it to an application's sports is the caller's job.
 
-Session totals: TCX states totals only per lap. See open question 2.
+Session totals: TCX states totals only per lap. See decision 2 in section 13.
 
 ## 7. Leniency and strictness
 
@@ -220,7 +220,7 @@ Lenient (keep reading, record it on the field or message):
 - Unknown elements, unknown attributes, unknown extension namespaces.
 - Elements in an order the schema does not allow, or missing required elements (for example a `Lap` without `TotalTimeSeconds`): the field is simply absent.
 
-Known real-world quirk: some exporters write whitespace before the XML declaration, which is not well-formed XML. The reader skips leading ASCII whitespace before parsing (see open question 3). A UTF-8 byte order mark is accepted as XML allows.
+Known real-world quirk: some exporters write whitespace before the XML declaration, which is not well-formed XML. The reader skips leading ASCII whitespace before parsing (decision 3, section 13). A UTF-8 byte order mark is accepted as XML allows.
 
 ## 8. Security
 
@@ -272,8 +272,8 @@ Names match fitkit's where the meaning matches, so an application can map all th
 - **M3 — Activity view:** section 6.4.
 - **M4 — Hardening and release:** quirks from real exporters (reproduced synthetically), a benchmark on a 24-hour file, README examples verified, first release on approval.
 
-## 13. Open questions
+## 13. Decisions (approved 2026-11-20)
 
-1. **Times without a UTC offset.** The schema's `xsd:dateTime` allows them; their time zone is unknown. Proposed: `value` nil, `invalid_reason` `:no_utc_offset`, raw text kept, so the gem never guesses a zone.
-2. **Session totals.** TCX has no activity-level totals. Proposed: `Session#total_timer_time`, `total_distance` and `total_calories` are the sum of the laps' stated values when every lap states it, otherwise nil; `max_heart_rate` and `max_speed` the largest lap value; averages nil. Documented as sums of stated values.
-3. **Whitespace before the XML declaration.** Proposed: skip it, as described in section 7.
+1. **Times without a UTC offset.** The schema's `xsd:dateTime` allows them; their time zone is unknown. Decided: `value` nil, `invalid_reason` `:no_utc_offset`, raw text kept, so the gem never guesses a zone.
+2. **Session totals.** TCX has no activity-level totals. Decided: `Session#total_timer_time`, `total_distance` and `total_calories` are the sum of the laps' stated values when every lap states it, otherwise nil; `max_heart_rate` and `max_speed` the largest lap value; averages nil. Documented as sums of stated values.
+3. **Whitespace before the XML declaration.** Decided: skip it, as described in section 7.
