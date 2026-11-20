@@ -29,7 +29,7 @@ The library must not create, modify, rewrite or repair TCX files.
 - Preserve unknown elements, attributes and extensions instead of dropping them.
 - Never fill in, estimate, smooth or derive measurements the file does not contain.
 - Raise useful, explicit exceptions with line and column numbers.
-- One runtime dependency: Nokogiri, used through its SAX interface.
+- One runtime dependency: Nokogiri 1.17 or later, used through its SAX interface.
 
 ## 3. Non-goals
 
@@ -88,7 +88,7 @@ end
 
 Same contract as `FitKit::Reader`:
 
-- `Reader.new(source, close_io: false, source_label: nil, limits: Limits::DEFAULT)`. `source` is a path, a `Pathname` or an IO-like object that responds to `read`.
+- `Reader.new(source, close_io: false, source_label: nil, limits: Limits::DEFAULT)`. `source` is a path, a `Pathname` or an IO-like object that responds to `read`. A `Pathname` is read as a path even though it responds to `read`.
 - `each_message` streams, and returns an Enumerator without a block.
 - Seekable sources can be iterated again; a non-seekable IO can be read once, and a second iteration raises `Error`.
 - Caller-owned IO is closed only with `close_io: true`.
@@ -210,8 +210,8 @@ Session totals: TCX states totals only per lap. See decision 2 in section 13.
 Strict (raise):
 
 - Not well-formed XML, a wrong root element, or the TCX v1 namespace.
-- Any entity reference other than the five predefined XML entities and character references (section 8).
-- Input cut off before the root element closes (`TruncatedFileError`).
+- A DTD internal subset, or any entity reference other than the five predefined XML entities and character references (section 8).
+- Input cut off before the root element closes (`TruncatedFileError`). libxml2 reports only a message and a position, so a file counts as cut off when the error is on the last line with at most part of one token (no `<` or `>`) after it, and the input starts with `<`. Anything else that is not well-formed is `InvalidFileError`.
 - Any limit crossed.
 
 Lenient (keep reading, record it on the field or message):
@@ -227,12 +227,13 @@ Known real-world quirk: some exporters write whitespace before the XML declarati
 Files come from users and third parties. The reader must:
 
 - Never access the network or the filesystem beyond the source (Nokogiri's SAX parser does not load external DTDs or entities by default; the reader must not turn that on).
-- Raise `UnsafeContentError` on the first reference to an entity declared in a DTD. Nokogiri reports these through the SAX `reference` callback, after libxml2 has expanded internal ones, so the `max_text_bytes` and `max_bytes` limits must still hold during expansion.
+- Raise `UnsafeContentError` on a DTD internal subset (`<!DOCTYPE x [ ... ]>`), which is where entities are declared, before the XML parser sees it. A document type declaration without one is allowed, and its external DTD is never loaded.
+- Raise `UnsafeContentError` on any reference to a DTD-declared entity, as a second line of defence. Nokogiri reports these through the SAX `reference` callback (Nokogiri 1.17 and later).
 - Enforce `Limits` while reading:
   - `max_bytes` (default 64 MB): bytes read from the source.
   - `max_elements` (default 5,000,000): elements opened.
   - `max_depth` (default 64): element nesting.
-  - `max_text_bytes` (default 1 MB): text and attribute length of one element.
+  - `max_text_bytes` (default 1 MB): text of one element without child elements, one attribute value, or the prolog before the root element. Text between child elements is not kept and not counted.
   - `max_seconds` (default none): parse time on a monotonic clock, excluding the caller's block.
   - `nil` switches a limit off; `Limits.none` switches all off.
 - Never log or include file content in exception messages beyond element names and positions.
@@ -261,7 +262,7 @@ Names match fitkit's where the meaning matches, so an application can map all th
 ## 11. Compatibility and packaging
 
 - Ruby 3.1+, CI on 3.1, 3.2, 3.3, 3.4 and 4.0.
-- Runtime dependency: `nokogiri ~> 1.16`.
+- Runtime dependency: `nokogiri ~> 1.17` (1.17 added the SAX `reference` callback).
 - Semantic versioning. Publish to RubyGems only after the maintainer approves a release.
 
 ## 12. Milestones

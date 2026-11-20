@@ -22,7 +22,7 @@ Gem::Specification.new do |spec|
   end
   spec.require_paths = ["lib"]
 
-  spec.add_dependency "nokogiri", "~> 1.16"
+  spec.add_dependency "nokogiri", "~> 1.17"
   spec.add_development_dependency "minitest", ">= 5.0", "< 7.0"
   spec.add_development_dependency "rake", ">= 13.0"
 end
