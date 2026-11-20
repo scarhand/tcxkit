@@ -113,7 +113,7 @@ A message is emitted when its element closes, so it carries everything inside it
 | `:element` | anything else at message level: `Folders`, `Workouts`, the root's `Extensions`, unknown elements | every leaf inside, untyped |
 | `:document` | `TrainingCenterDatabase` | the root's attributes (such as `xsi:schemaLocation`); always the last message |
 
-Every leaf element and every attribute inside a message, outside the messages nested in it, is one of its fields. `Activities`, `Courses`, `FirstSport` and `NextSport` only group messages. An empty `Extensions` element is not a field.
+Every leaf element and every attribute inside a message, outside the messages nested in it, is one of its fields. `Activities`, `Courses`, `FirstSport` and `NextSport` only group messages. An element with only attributes (`<TPX CadenceSensor="Bike"/>`) gives only its attribute fields, and an empty `Extensions` element is not a field.
 
 Field names are the local name in snake_case. A `Value` element takes its parent's name (`HeartRateBpm/Value` becomes `heart_rate_bpm`). The path keeps every element: `Position/LatitudeDegrees`, `Extensions/TPX/Speed`, `@StartTime`. Paths use local names only, since prefixes are chosen by each file. When names repeat (`Build/Version/VersionMajor` and `Version/VersionMajor`, or the begin and end positions of a course lap), look fields up by path.
 
