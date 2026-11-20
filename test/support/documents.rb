@@ -24,4 +24,25 @@ module Documents
   def read(xml, **options)
     TcxKit::Reader.new(StringIO.new(xml), **options).each_message { |_message| nil }
   end
+
+  def messages(xml, **options)
+    TcxKit::Reader.new(StringIO.new(xml), **options).each_message.to_a
+  end
+
+  # The first message with that name.
+  def message(xml, name)
+    messages(xml).find { |message| message.name == name }
+  end
+
+  def fixture(name)
+    File.expand_path("../fixtures/#{name}", __dir__)
+  end
+
+  # A trackpoint document with the given Trackpoint children.
+  def trackpoint(children)
+    tcx(%(<Activities><Activity Sport="Running"><Id>2026-01-01T08:00:00Z</Id>
+      <Lap StartTime="2026-01-01T08:00:00Z"><TotalTimeSeconds>1</TotalTimeSeconds><DistanceMeters>1</DistanceMeters>
+      <Calories>1</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod>
+      <Track><Trackpoint>#{children}</Trackpoint></Track></Lap></Activity></Activities>))
+  end
 end
