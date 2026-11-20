@@ -165,8 +165,11 @@ module TcxKit
       end
     end
 
+    # An empty Extensions is not a field, and neither is the missing text of
+    # an element that only carries attributes (such as <TPX CadenceSensor="Bike"/>).
     def add_text(node, element)
       return if element.name == "Extensions" && element.text.strip.empty?
+      return if element.text.empty? && !element.attributes.empty?
 
       add_field(node.frame, path: node.path, key: node.key, name: node.name,
                             namespace: element.namespace, text: element.text, line: element.line)

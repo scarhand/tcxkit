@@ -99,6 +99,13 @@ class FieldsTest < Minitest::Test
     assert_equal 120, pt[:heart_rate_bpm]
   end
 
+  def test_an_element_with_only_attributes_gives_only_its_attribute_fields
+    xml = %(<Extensions><TPX xmlns="#{TcxKit::ACTIVITY_EXTENSION_NAMESPACE}" CadenceSensor="Bike"/></Extensions>)
+
+    assert_equal [:cadence_sensor], point(xml).fields.map(&:name)
+    assert_equal :bike, point(xml)[:cadence_sensor]
+  end
+
   def test_empty_extensions_are_not_fields
     assert_equal [:time], point("<Time>2026-01-01T08:00:00Z</Time><Extensions/>").fields.map(&:name)
   end
