@@ -6,13 +6,17 @@ module TcxKit
   module Types
     # A field's type: name (as Field#type reports it), the decoder, and the
     # range or enumeration it is restricted to.
-    Spec = Struct.new(:name, :decoder, :min, :max, :max_exclusive, :values, keyword_init: true) do
+    # preserve: keep whitespace (an enumeration based on xsd:string) instead
+    # of collapsing it.
+    Spec = Struct.new(:name, :decoder, :min, :max, :max_exclusive, :values, :signed, :preserve, keyword_init: true) do
       def known?
         name != :unknown
       end
     end
 
     DOUBLE = /\A[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?\z/
+    DECIMAL = /\A[+-]?(?:\d+(?:\.\d*)?|\.\d+)\z/
+    SIGNED_INTEGER = /\A[+-]?\d+\z/
     NON_FINITE_DOUBLES = %w[INF +INF -INF NaN].freeze
     UNSIGNED_INTEGER = /\A(?:\+?\d+|-0+)\z/
     DATE_TIME = /\A(-?\d{4,})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)(Z|[+-]\d{2}:\d{2})?\z/
@@ -26,13 +30,17 @@ module TcxKit
     def double(name = :double, min: nil, max: nil, max_exclusive: nil)
       Spec.new(name: name, decoder: :double, min: min, max: max, max_exclusive: max_exclusive)
     end
-    def integer(name, min:, max:) = Spec.new(name: name, decoder: :integer, min: min, max: max)
+    def decimal(name = :decimal, min: nil, max: nil, max_exclusive: nil)
+      Spec.new(name: name, decoder: :decimal, min: min, max: max, max_exclusive: max_exclusive)
+    end
+    def integer(name, min:, max:, signed: false) = Spec.new(name: name, decoder: :integer, min: min, max: max, signed: signed)
     def date_time = Spec.new(name: :date_time, decoder: :date_time)
     def boolean = Spec.new(name: :boolean, decoder: :boolean)
 
     # values: the schema's enumeration, mapped to symbols in snake_case.
-    def enumeration(name, values)
-      Spec.new(name: name, decoder: :enumeration, values: values.to_h { |value| [value, Naming.snake_case(value).to_sym] })
+    def enumeration(name, values, preserve: false)
+      Spec.new(name: name, decoder: :enumeration, preserve: preserve,
+               values: values.to_h { |value| [value, Naming.snake_case(value).to_sym] })
     end
 
     UNKNOWN = Spec.new(name: :unknown, decoder: :string).freeze
@@ -43,13 +51,14 @@ module TcxKit
     def decode(spec, text)
       return [text, text, nil] if spec.decoder == :string
 
-      raw = collapse(text)
+      raw = spec.preserve ? text : collapse(text)
       return [raw, raw, nil] if spec.decoder == :token
       return [raw, nil, :empty] if raw.empty?
 
       value, reason =
         case spec.decoder
         when :double then decode_double(spec, raw)
+        when :decimal then decode_decimal(spec, raw)
         when :integer then decode_integer(spec, raw)
         when :date_time then decode_date_time(spec, raw)
         when :enumeration then decode_enumeration(spec, raw)
@@ -76,8 +85,16 @@ module TcxKit
       [value, range_reason(spec, value)]
     end
 
+    # xsd:decimal: no exponent, no INF or NaN.
+    def decode_decimal(spec, raw)
+      return [nil, :not_a_number] unless DECIMAL.match?(raw)
+
+      value = Float(raw)
+      [value, range_reason(spec, value)]
+    end
+
     def decode_integer(spec, raw)
-      return [nil, :not_an_integer] unless UNSIGNED_INTEGER.match?(raw)
+      return [nil, :not_an_integer] unless (spec.signed ? SIGNED_INTEGER : UNSIGNED_INTEGER).match?(raw)
 
       value = Integer(raw.delete_prefix("+"), 10)
       [value, range_reason(spec, value)]
