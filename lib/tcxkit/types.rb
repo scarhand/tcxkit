@@ -7,8 +7,10 @@ module TcxKit
     # A field's type: name (as Field#type reports it), the decoder, and the
     # range or enumeration it is restricted to.
     # preserve: keep whitespace (an enumeration based on xsd:string) instead
-    # of collapsing it.
-    Spec = Struct.new(:name, :decoder, :min, :max, :max_exclusive, :values, :signed, :preserve, keyword_init: true) do
+    # of collapsing it. min_length, max_length and pattern restrict a token
+    # (XSD minLength, maxLength or length, and pattern), in characters.
+    Spec = Struct.new(:name, :decoder, :min, :max, :max_exclusive, :values, :signed, :preserve,
+                      :min_length, :max_length, :pattern, keyword_init: true) do
       def known?
         name != :unknown
       end
@@ -18,7 +20,11 @@ module TcxKit
     DECIMAL = /\A[+-]?(?:\d+(?:\.\d*)?|\.\d+)\z/
     SIGNED_INTEGER = /\A[+-]?\d+\z/
     NON_FINITE_DOUBLES = %w[INF +INF -INF NaN].freeze
+    # The XSD 1.1 lexical rule for unsigned types: an optional "+", and "-"
+    # only before zero. XSD 1.0 allows digits only; the value is the same
+    # either way, so the more lenient rule is kept (SPECIFICATION.md 6.3).
     UNSIGNED_INTEGER = /\A(?:\+?\d+|-0+)\z/
+    G_YEAR = /\A(-?\d{4,})(Z|[+-]\d{2}:\d{2})?\z/
     DATE_TIME = /\A(-?\d{4,})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2}(?:\.\d+)?)(Z|[+-]\d{2}:\d{2})?\z/
     BOOLEANS = { "true" => true, "1" => true, "false" => false, "0" => false }.freeze
     DAYS_IN_MONTH = [nil, 31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31].freeze
@@ -26,7 +32,11 @@ module TcxKit
     module_function
 
     def string(name = :string) = Spec.new(name: name, decoder: :string)
-    def token(name = :token) = Spec.new(name: name, decoder: :token)
+    def token(name = :token, min_length: nil, max_length: nil, length: nil, pattern: nil)
+      Spec.new(name: name, decoder: :token, min_length: length || min_length, max_length: length || max_length,
+               pattern: pattern && Regexp.new("\\A(?:#{pattern})\\z"))
+    end
+    def g_year = Spec.new(name: :g_year, decoder: :g_year)
     def double(name = :double, min: nil, max: nil, max_exclusive: nil)
       Spec.new(name: name, decoder: :double, min: min, max: max, max_exclusive: max_exclusive)
     end
@@ -52,7 +62,7 @@ module TcxKit
       return [text, text, nil] if spec.decoder == :string
 
       raw = spec.preserve ? text : collapse(text)
-      return [raw, raw, nil] if spec.decoder == :token
+      return decode_token(spec, raw) if spec.decoder == :token
       return [raw, nil, :empty] if raw.empty?
 
       value, reason =
@@ -63,6 +73,7 @@ module TcxKit
         when :date_time then decode_date_time(spec, raw)
         when :enumeration then decode_enumeration(spec, raw)
         when :boolean then decode_boolean(spec, raw)
+        when :g_year then decode_g_year(spec, raw)
         end
       [raw, reason ? nil : value, reason]
     end
@@ -83,6 +94,26 @@ module TcxKit
       return [nil, :not_finite] unless value.finite?
 
       [value, range_reason(spec, value)]
+    end
+
+    # A token, checked against its length and pattern facets.
+    def decode_token(spec, raw)
+      reason =
+        if spec.min_length && raw.length < spec.min_length then :too_short
+        elsif spec.max_length && raw.length > spec.max_length then :too_long
+        elsif spec.pattern && !spec.pattern.match?(raw) then :no_pattern_match
+        end
+      [raw, reason ? nil : raw, reason]
+    end
+
+    # xsd:gYear: the year as an Integer; a time zone, if written, stays in
+    # the raw value.
+    def decode_g_year(_spec, raw)
+      match = G_YEAR.match(raw)
+      return [nil, :not_a_year] unless match
+      return [nil, :not_a_year] if match[2] && !valid_zone?(match[2])
+
+      [Integer(match[1], 10), nil]
     end
 
     # xsd:decimal: no exponent, no INF or NaN.
@@ -128,7 +159,11 @@ module TcxKit
     def valid_date_time?(year, month, day, hour, minute, second, zone)
       return false unless (1..12).cover?(month) && day.between?(1, days_in_month(year, month))
       return false unless hour.between?(0, 23) && minute.between?(0, 59) && second < 60
-      return true if zone.nil? || zone == "Z"
+      zone.nil? || valid_zone?(zone)
+    end
+
+    def valid_zone?(zone)
+      return true if zone == "Z"
 
       zone_hours, zone_minutes = zone[1..].split(":").map { |part| Integer(part, 10) }
       zone_minutes <= 59 && (zone_hours * 60 + zone_minutes) <= 14 * 60
@@ -172,7 +207,7 @@ module TcxKit
       name.to_s
           .gsub(/([A-Z]+)([A-Z][a-z])/, '\1_\2')
           .gsub(/([a-z\d])([A-Z])/, '\1_\2')
-          .tr("-", "_")
+          .tr("- ", "__")
           .downcase
     end
   end

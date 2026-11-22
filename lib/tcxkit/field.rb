@@ -14,7 +14,8 @@ module TcxKit
   #   field.valid?
   #   field.invalid_reason # nil, :empty, :not_a_number, :not_finite, :not_an_integer,
   #                        # :out_of_range, :not_a_date_time, :no_utc_offset,
-  #                        # :not_in_enumeration, :not_a_boolean
+  #                        # :not_in_enumeration, :not_a_boolean, :not_a_year,
+  #                        # :too_short, :too_long, :no_pattern_match
   #   field.line
   class Field
     attr_reader :name, :path, :namespace, :text, :raw_value, :value, :type, :invalid_reason, :line
