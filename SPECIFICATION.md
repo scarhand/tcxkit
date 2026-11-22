@@ -147,7 +147,8 @@ field.type           # :positive_byte, :double, :date_time, :sport, :token, :str
 field.known?         # false where the schema does not put this element or attribute
 field.valid?
 field.invalid_reason # nil, :empty, :not_a_number, :not_finite, :not_an_integer, :out_of_range,
-                     # :not_a_date_time, :no_utc_offset, :not_in_enumeration, :not_a_boolean
+                     # :not_a_date_time, :no_utc_offset, :not_in_enumeration, :not_a_boolean,
+                     # :too_short, :too_long, :no_pattern_match
 field.line
 ```
 
@@ -155,11 +156,11 @@ Types come from tables written from the schemas, keyed by path and namespace: `E
 
 - Whitespace: `xsd:string` (such as `Notes`) keeps the text as written; every other type collapses it (XSD `collapse`), so `raw_value` is the collapsed text.
 - `xsd:double` → `Float`. `INF` and `NaN` are not finite (`:not_finite`). Callers that need exact decimals use `BigDecimal(field.raw_value)`.
-- Integer types → `Integer`, range-checked: `unsignedShort`, `unsignedInt`, `positiveByte` (1 to 255, heart rates) and `CadenceValue_t` (0 to 254). A decimal such as `142.0` is `:not_an_integer`.
+- Integer types → `Integer`, range-checked: `unsignedShort`, `unsignedInt`, `positiveByte` (1 to 255, heart rates) and `CadenceValue_t` (0 to 254). A decimal such as `142.0` is `:not_an_integer`. Signs follow the XSD 1.1 rule: an optional `+`, and `-` only before zero (`+007` is 7, `-0` is 0, `-1` is `:not_an_integer`). XSD 1.0 allows digits only for the unsigned types; the value is the same either way, so the more lenient rule is kept.
 - `xsd:dateTime` → `Time` in UTC when the text has `Z` or an offset. Without an offset the value is `nil` and `invalid_reason` is `:no_utc_offset` (decision 1, section 13). Fractional seconds are kept. Impossible dates and times (February 30, hour 24, second 60, offsets beyond 14 hours) are `:not_a_date_time`.
 - `xsd:boolean` → `true` or `false`.
-- Enumerations (`Sport_t`, `Intensity_t`, `TriggerMethod_t`, `SensorState_t`, `CadenceSensorType_t`, `BuildType_t`, `TrainingType_t`) → `Symbol` in snake_case. Matching is exact (`Absent`, not `absent`); anything else is `:not_in_enumeration`.
-- `Token_t` → the collapsed `String`.
+- Enumerations (`Sport_t`, `Intensity_t`, `TriggerMethod_t`, `SensorState_t`, `CadenceSensorType_t`, `BuildType_t`, `TrainingType_t`, `CoursePointType_t`) → `Symbol` in snake_case, spaces included (`First Aid` is `:first_aid`, `4th Category` is `:"4th_category"`). Matching is exact after collapsing whitespace (`Absent`, not `absent`); anything else is `:not_in_enumeration`.
+- `Token_t` → the collapsed `String`. Restrictions on its length (in characters) and pattern are validity: `RestrictedToken_t` (`Course/Name`, `Training/Plan/Name`) 1 to 15 characters, `CoursePointName_t` 1 to 10, `LangID_t` exactly 2, `PartNumber_t` the pattern `[\p{Lu}\d]{3}-[\p{Lu}\d]{5}-[\p{Lu}\d]{2}`. Text outside them keeps its `raw_value` with `:too_short`, `:too_long` or `:no_pattern_match`.
 - Ranges are validity, not errors: `DegreesLatitude_t` (-90 to 90), `DegreesLongitude_t` (-180 up to, not including, 180).
 - Unknown elements and attributes: `known?` false, `type` `:unknown`, `value` is the text as written.
 

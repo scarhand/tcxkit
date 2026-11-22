@@ -21,6 +21,11 @@ module TcxKit
     UNSIGNED_SHORT = T.integer(:unsigned_short, min: 0, max: 65_535)
     UNSIGNED_INT = T.integer(:unsigned_int, min: 0, max: 4_294_967_295)
 
+    RESTRICTED_TOKEN = T.token(:restricted_token, min_length: 1, max_length: 15) # RestrictedToken_t
+    COURSE_POINT_NAME = T.token(:course_point_name, min_length: 1, max_length: 10) # CoursePointName_t
+    LANG_ID = T.token(:lang_id, length: 2) # LangID_t
+    PART_NUMBER = T.token(:part_number, pattern: '[\p{Lu}\d]{3}-[\p{Lu}\d]{5}-[\p{Lu}\d]{2}') # PartNumber_t
+
     SPORT = T.enumeration(:sport, %w[Running Biking Other])
     INTENSITY = T.enumeration(:intensity, %w[Active Resting])
     TRIGGER_METHOD = T.enumeration(:trigger_method, %w[Manual Distance Location Time HeartRate])
@@ -28,6 +33,10 @@ module TcxKit
     CADENCE_SENSOR_TYPE = T.enumeration(:cadence_sensor_type, %w[Footpod Bike])
     BUILD_TYPE = T.enumeration(:build_type, %w[Internal Alpha Beta Release])
     TRAINING_TYPE = T.enumeration(:training_type, %w[Workout Course])
+    COURSE_POINT_TYPE = T.enumeration(:course_point_type, [
+      "Generic", "Summit", "Valley", "Water", "Food", "Danger", "Left", "Right", "Straight", "First Aid",
+      "4th Category", "3rd Category", "2nd Category", "1st Category", "Hors Category", "Sprint"
+    ])
 
     VERSION = {
       "VersionMajor" => UNSIGNED_SHORT, "VersionMinor" => UNSIGNED_SHORT,
@@ -102,7 +111,7 @@ module TcxKit
       "Training/QuickWorkoutResults/DistanceMeters" => T.double,
       "Training/Plan/@Type" => TRAINING_TYPE,
       "Training/Plan/@IntervalWorkout" => T.boolean,
-      "Training/Plan/Name" => T.token
+      "Training/Plan/Name" => RESTRICTED_TOKEN
     }.freeze
 
     # AbstractSource_t, as Device_t or Application_t (named by xsi:type).
@@ -114,22 +123,22 @@ module TcxKit
       "Build/Type" => BUILD_TYPE,
       "Build/Time" => T.token,
       "Build/Builder" => T.token,
-      "LangID" => T.token,
-      "PartNumber" => T.token
+      "LangID" => LANG_ID,
+      "PartNumber" => PART_NUMBER
     }.merge(within("Version", VERSION), within("Build/Version", VERSION)).freeze
 
     # MultiSportSession_t.
     MULTI_SPORT_SESSION = { "Id" => T.date_time, "Notes" => T.string }.freeze
 
     # Course_t and CoursePoint_t.
-    COURSE = { "Name" => T.token, "Notes" => T.string }.freeze
+    COURSE = { "Name" => RESTRICTED_TOKEN, "Notes" => T.string }.freeze
     COURSE_POINT = {
-      "Name" => T.token,
+      "Name" => COURSE_POINT_NAME,
       "Time" => T.date_time,
       "Position/LatitudeDegrees" => DEGREES_LATITUDE,
       "Position/LongitudeDegrees" => DEGREES_LONGITUDE,
       "AltitudeMeters" => T.double,
-      "PointType" => T.token,
+      "PointType" => COURSE_POINT_TYPE,
       "Notes" => T.string
     }.freeze
 

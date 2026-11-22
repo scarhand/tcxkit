@@ -80,7 +80,7 @@ class DocumentStructureTest < Minitest::Test
     lap = messages.first
     assert_equal [1.5, 1.6], [lap["BeginPosition/LatitudeDegrees"], lap["EndPosition/LatitudeDegrees"]]
     assert lap.fields.all?(&:known?)
-    assert_equal ["Turn", "Left", 1.55], messages[3].to_h.values_at(:name, :point_type, :latitude_degrees)
+    assert_equal ["Turn", :left, 1.55], messages[3].to_h.values_at(:name, :point_type, :latitude_degrees)
     assert_equal "Loop", messages[4][:name]
   end
 
