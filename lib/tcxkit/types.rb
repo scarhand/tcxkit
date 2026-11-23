@@ -90,7 +90,7 @@ module TcxKit
       return [nil, :not_finite] if NON_FINITE_DOUBLES.include?(raw)
       return [nil, :not_a_number] unless DOUBLE.match?(raw)
 
-      value = Float(raw)
+      value = to_float(raw)
       return [nil, :not_finite] unless value.finite?
 
       [value, range_reason(spec, value)]
@@ -120,8 +120,59 @@ module TcxKit
     def decode_decimal(spec, raw)
       return [nil, :not_a_number] unless DECIMAL.match?(raw)
 
-      value = Float(raw)
+      value = to_float(raw)
+      return [nil, :not_finite] unless value.finite?
+
       [value, range_reason(spec, value)]
+    end
+
+    # Kernel#Float prints "out of range" warnings (with $VERBOSE on) for
+    # numbers beyond a Float, which a file could use to flood logs. Numbers
+    # are therefore sorted by their decimal order of magnitude first: well
+    # inside the Float range they go to Float; far beyond it they are
+    # infinite or zero without computing anything large (1e999999999 must
+    # not build a billion-digit number); the band in between is computed
+    # exactly with Rational, which does not warn.
+    SAFE_MAGNITUDE = 300
+    MAX_MAGNITUDE = 400
+    MAX_FLOAT = Rational(Float::MAX)
+
+    def to_float(raw)
+      magnitude = decimal_magnitude(raw)
+      return 0.0 if magnitude.nil?
+      return Float(raw) if magnitude.abs < SAFE_MAGNITUDE
+
+      negative = raw.start_with?("-")
+      if magnitude >= MAX_MAGNITUDE
+        negative ? -Float::INFINITY : Float::INFINITY
+      elsif magnitude <= -MAX_MAGNITUDE
+        negative ? -0.0 : 0.0
+      else
+        exact = Rational(raw)
+        return negative ? -Float::INFINITY : Float::INFINITY if exact.abs > MAX_FLOAT
+
+        exact.to_f
+      end
+    end
+
+    # The power of ten of the first significant digit ("1500" is 3,
+    # "0.025" is -2, "1e400" is 400), or nil for zero. raw has already
+    # matched DOUBLE or DECIMAL.
+    def decimal_magnitude(raw)
+      mantissa, exponent = raw.delete_prefix("+").delete_prefix("-").split(/[eE]/, 2)
+      whole, fraction = mantissa.split(".", 2)
+      whole = whole.to_s.sub(/\A0+/, "")
+      fraction = fraction.to_s
+      exponent = exponent ? Integer(exponent, 10) : 0
+
+      if whole.empty?
+        leading = fraction[/\A0*/].length
+        return nil if leading == fraction.length
+
+        exponent - leading - 1
+      else
+        exponent + whole.length - 1
+      end
     end
 
     def decode_integer(spec, raw)
