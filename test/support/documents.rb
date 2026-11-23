@@ -45,4 +45,20 @@ module Documents
       <Calories>1</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod>
       <Track><Trackpoint>#{children}</Trackpoint></Track></Lap></Activity></Activities>))
   end
+
+  # An IO that hands over at most size bytes per read, as a socket or a
+  # decompressing stream may.
+  class ShortReads
+    def initialize(bytes, size)
+      @bytes = bytes.b
+      @size = size
+    end
+
+    def read(_length = nil, buffer = nil)
+      return nil if @bytes.empty?
+
+      chunk = @bytes.slice!(0, @size)
+      buffer ? buffer.replace(chunk) : chunk
+    end
+  end
 end

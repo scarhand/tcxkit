@@ -76,7 +76,7 @@ module TcxKit
         @pending ||= prefix
         return nil if @error
 
-        data = @pending.empty? ? read_raw(length) : take(length)
+        data = @pending.empty? ? read_full(length) : take(length)
         return nil if data.nil? || @error
 
         unless @delivered
@@ -88,6 +88,21 @@ module TcxKit
       end
 
       private
+
+      # Reads up to length bytes, reading again when the IO hands over fewer
+      # (as a socket or a decompressing stream may) until there are length
+      # bytes or the input ends. libxml2 misreads some inputs handed over a
+      # byte at a time, such as UTF-16.
+      def read_full(length)
+        data = read_raw(length)
+        while data && data.bytesize < length
+          return refuse(time_limit_error) if @clock.exceeded?
+
+          more = read_raw(length - data.bytesize) or break
+          data << more
+        end
+        @error ? nil : data
+      end
 
       def read_raw(length)
         return nil if @eof
@@ -192,6 +207,8 @@ module TcxKit
       # there is no more input, and anything unfinished is left for the XML
       # parser to report.
       def scan(buffer, complete:)
+        return :more if !complete && encoding_start?(buffer)
+
         utf16 = utf16(buffer)
         return scan(utf16, complete: complete) if utf16
 
@@ -219,6 +236,17 @@ module TcxKit
       UTF16_LE_BOM = "\xFF\xFE".b.freeze
       UTF16_BE_BOM = "\xFE\xFF".b.freeze
       UTF32_LE_BOM = "\xFF\xFE\x00\x00".b.freeze
+      # How a document can start, decided by its first bytes: a byte order
+      # mark, or "<" in UTF-16 big-endian. ("<" alone, which may begin
+      # UTF-16 little-endian, is handled as unfinished markup.)
+      ENCODING_STARTS = [Source::BOM, UTF16_LE_BOM, UTF16_BE_BOM, UTF32_LE_BOM, "\x00<".b].freeze
+
+      # True when buffer is only the start of one of ENCODING_STARTS, so an
+      # input that hands over a few bytes at a time is read further before
+      # deciding what it is.
+      def encoding_start?(buffer)
+        ENCODING_STARTS.any? { |start| start.bytesize > buffer.bytesize && start.start_with?(buffer) }
+      end
 
       # A UTF-8 copy of a UTF-16 buffer (by its byte order mark, or by "<"
       # followed or preceded by a zero byte), so a DTD in a UTF-16 document

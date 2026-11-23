@@ -61,6 +61,38 @@ class ExporterQuirksTest < Minitest::Test
     assert_raises(TcxKit::UnsafeContentError) { read("\xFF\xFE".b + xml.encode("UTF-16LE").b) }
   end
 
+  def test_inputs_that_hand_over_a_few_bytes_at_a_time
+    utf16 = %(<?xml version="1.0" encoding="UTF-16"?>)
+    {
+      "UTF-8" => tcx,
+      "UTF-8 with a byte order mark" => "\xEF\xBB\xBF".b + tcx.b,
+      "UTF-16 little-endian with a byte order mark" => "\xFF\xFE".b + tcx(declaration: utf16).encode("UTF-16LE").b,
+      "UTF-16 big-endian with a byte order mark" => "\xFE\xFF".b + tcx(declaration: utf16).encode("UTF-16BE").b,
+      "UTF-16 little-endian without one" => tcx(declaration: utf16).encode("UTF-16LE").b,
+      "UTF-16 big-endian without one" => tcx(declaration: utf16).encode("UTF-16BE").b
+    }.each do |label, bytes|
+      expected = TcxKit::Reader.new(StringIO.new(bytes)).each_message.map(&:to_h)
+      [1, 2, 3, 5].each do |size|
+        actual = TcxKit::Reader.new(Documents::ShortReads.new(bytes, size)).each_message.map(&:to_h)
+        assert_equal expected, actual, "#{label}, #{size}-byte reads"
+      end
+    end
+  end
+
+  def test_a_dtd_after_a_byte_order_mark_is_refused_from_short_reads
+    dtd = %(<!DOCTYPE x [<!ENTITY e "y">]>)
+    {
+      "UTF-8" => "\xEF\xBB\xBF".b + (dtd + tcx.sub(/\A<\?xml[^>]*>/, "")).b,
+      "UTF-16" => "\xFF\xFE".b + (dtd + tcx.sub(/\A<\?xml[^>]*>/, "")).encode("UTF-16LE").b
+    }.each do |label, bytes|
+      [1, 2, 3].each do |size|
+        assert_raises(TcxKit::UnsafeContentError, "#{label}, #{size}-byte reads") do
+          TcxKit::Reader.new(Documents::ShortReads.new(bytes, size)).each_message { |*| nil }
+        end
+      end
+    end
+  end
+
   def test_single_byte_encodings_declared_in_the_xml_declaration
     latin1 = tcx(declaration: %(<?xml version="1.0" encoding="ISO-8859-1"?>)).encode("ISO-8859-1").b
     windows = tcx(declaration: %(<?xml version="1.0" encoding="windows-1252"?>), notes: "€5 run").encode("Windows-1252").b

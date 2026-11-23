@@ -19,9 +19,9 @@ module TcxKit
   #
   # Garmin repeats the trackpoint at a lap boundary as the last point of one
   # lap and the first of the next. Activity#records and Session#records leave
-  # out a trackpoint that repeats the one before it exactly (same time,
-  # identical fields); Lap#records and the messages keep every one
-  # (decision 4).
+  # out a lap's first trackpoint when it exactly repeats the last trackpoint
+  # of the lap before it in the same session (same time, identical fields);
+  # Lap#records and the messages keep every one (decision 5).
   class Activity
     SUMMARY = %i[
       sport sub_sport total_distance total_elapsed_time total_timer_time total_calories
@@ -47,6 +47,7 @@ module TcxKit
     def initialize(messages)
       @messages = messages.freeze
       records_by_lap = Hash.new { |hash, key| hash[key] = [] }
+      repeats = {}.compare_by_identity
       laps_by_activity = Hash.new { |hash, key| hash[key] = [] }
       creators = {}
       @sessions = []
@@ -63,12 +64,14 @@ module TcxKit
           next unless context.key?(:activity) || context.key?(:transition)
 
           record = Record.new(message)
-          @records << record unless repeat?(@records.last, record)
+          @records << record
           records_by_lap[lap_key(context)] << record
         when :lap
           next unless context.key?(:activity)
 
           lap = Lap.new(message, records_by_lap.delete(lap_key(context)) || [])
+          previous = laps_by_activity[context[:activity]].last
+          repeats[lap.records.first] = true if Activity.boundary_repeat?(previous, lap)
           @laps << lap
           laps_by_activity[context[:activity]] << lap
         when :transition
@@ -83,6 +86,7 @@ module TcxKit
         end
       end
 
+      @records.reject! { |record| repeats.key?(record) }
       [@sessions, @laps, @transitions, @records, @multi_sport_sessions].each(&:freeze)
       freeze
     end
@@ -110,19 +114,24 @@ module TcxKit
       define_method(name) { session&.public_send(name) }
     end
 
+    # True when lap's first trackpoint exactly repeats the last trackpoint of
+    # previous, the lap before it in the same session: the same time and the
+    # same fields (namespace, path and text, in order). Used by Session;
+    # not part of the API.
+    def self.boundary_repeat?(previous, lap)
+      last = previous&.records&.last
+      first = lap.records.first
+      return false unless last && first && first.timestamp && last.timestamp == first.timestamp
+
+      identity(last) == identity(first)
+    end
+
+    def self.identity(record)
+      record.raw_message.fields.map { |field| [field.namespace, field.path, field.text] }
+    end
+    private_class_method :identity
+
     private
-
-    def repeat?(previous, record)
-      self.class.repeat?(previous, record)
-    end
-
-    # A trackpoint that repeats the previous one: same time, identical fields.
-    def self.repeat?(previous, record)
-      return false unless previous && record.timestamp && previous.timestamp == record.timestamp
-
-      previous.raw_message.fields.map { |field| [field.path, field.text] } ==
-        record.raw_message.fields.map { |field| [field.path, field.text] }
-    end
 
     # Trackpoints belong to the lap or transition whose context they share.
     def lap_key(context)
@@ -171,11 +180,11 @@ module TcxKit
         @raw_message.context[:multi_sport_session]
       end
 
-      # Every lap's trackpoints, leaving out exact repeats at lap boundaries.
+      # Every lap's trackpoints, leaving out a lap's first trackpoint when it
+      # exactly repeats the previous lap's last one.
       def records
-        @laps.flat_map(&:records).each_with_object([]) do |record, records|
-          previous = records.last
-          records << record unless previous && Activity.repeat?(previous, record)
+        @laps.each_with_index.flat_map do |lap, index|
+          index.positive? && Activity.boundary_repeat?(@laps[index - 1], lap) ? lap.records.drop(1) : lap.records
         end
       end
 
