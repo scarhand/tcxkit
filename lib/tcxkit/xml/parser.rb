@@ -117,9 +117,17 @@ module TcxKit
         raise UnsafeContentError.new("Reference to the DTD entity #{short(name)}", **position)
       end
 
+      # Namespace errors that libxml2 reports and reads past: the element is
+      # read without a namespace (SPECIFICATION.md, section 7).
+      NAMESPACE_ERRORS = [
+        /\ANamespace prefix \S+ (?:for \S+ )?on \S+ is not defined\z/,
+        /\Axmlns(?::\S+)?: Empty XML namespace is not allowed\z/
+      ].freeze
+
       def error(message)
         raise_source_error
         message = message.to_s.strip
+        return if NAMESPACE_ERRORS.any? { |pattern| pattern.match?(message) }
         raise truncated(message) if cut_off?(message)
 
         raise invalid(message)
