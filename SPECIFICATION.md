@@ -1,6 +1,6 @@
 # TcxKit — Project Specification
 
-**Status:** Approved by the maintainer on 2026-11-20
+**Status:** Approved by the maintainer on 2026-11-20; all milestones done for 0.1.0 (2026-11-23)
 **Project type:** Read-only Ruby library for Garmin Training Center XML (TCX) files
 **Gem name:** `tcxkit` (free on RubyGems on 2026-11-20)
 **Ruby namespace / require path:** `TcxKit` / `require "tcxkit"`
@@ -253,7 +253,14 @@ Lenient (keep reading, record it on the field or message):
 - Unknown elements, unknown attributes, unknown extension namespaces.
 - Elements in an order the schema does not allow, or missing required elements (for example a `Lap` without `TotalTimeSeconds`): the field is simply absent.
 
-Known real-world quirk: some exporters write whitespace before the XML declaration, which is not well-formed XML. The reader skips leading ASCII whitespace before parsing (decision 3, section 13). A UTF-8 byte order mark is accepted as XML allows.
+Known real-world quirks, each reproduced in `test/tcxkit/exporter_quirks_test.rb`:
+
+- Whitespace before the XML declaration, which is not well-formed XML: skipped (decision 3). A UTF-8 byte order mark is accepted as XML allows.
+- A namespace prefix used without being declared (`<ns3:TPX>` with no `xmlns:ns3`), or bound to an empty namespace: libxml2 reports these and reads on, and so does the reader. The element has no namespace, so its values are kept as untyped fields; the gem does not guess which namespace was meant (decision 6). Any other error still makes the file invalid.
+- UTF-16 documents (with or without a byte order mark) and single-byte encodings named in the XML declaration (`ISO-8859-1`, `windows-1252`) are read; values come out as UTF-8. The DTD check decodes the start of a UTF-16 document, so a DTD is refused there too.
+- Bytes that do not match the declared encoding (Latin-1 bytes in a UTF-8 document) make the file invalid.
+- Carriage returns: XML turns `\r\n` into `\n` in text, as libxml2 does.
+- Near-miss values stay invalid, with their text kept: `+0000` or a lowercase `z` in a time, a heart rate written as `142.0`.
 
 ## 8. Security
 
@@ -300,11 +307,11 @@ Names match fitkit's where the meaning matches, so an application can map all th
 
 ## 12. Milestones
 
-- **M0 — Foundation** (this PR): specification, gem skeleton, CI.
-- **M1 — Safe streaming reader:** XML layer, `Limits`, errors, root detection, the leniency rules in section 7, security tests.
-- **M2 — Messages and fields:** the message table in 6.2, schema typing and ranges in 6.3, Activity Extension v2, unknown preservation.
-- **M3 — Activity view:** section 6.4.
-- **M4 — Hardening and release:** quirks from real exporters (reproduced synthetically), a benchmark on a 24-hour file, README examples verified, first release on approval.
+- **M0 — Foundation** (done): specification, gem skeleton, CI.
+- **M1 — Safe streaming reader** (done): XML layer, `Limits`, errors, root detection, the leniency rules in section 7, security tests.
+- **M2 — Messages and fields** (done): the message table in 6.2, schema typing and ranges in 6.3, Activity Extension v2, unknown preservation.
+- **M3 — Activity view** (done): section 6.4.
+- **M4 — Hardening and release** (done; release on approval): quirks from real exporters (reproduced synthetically), a benchmark on a 24-hour file, README examples verified, first release on approval. Also seeded fuzz tests of bytes, markup and values, and reading without Ruby warnings.
 
 ## 13. Decisions (approved 2026-11-20)
 
@@ -313,3 +320,4 @@ Names match fitkit's where the meaning matches, so an application can map all th
 3. **Whitespace before the XML declaration.** Decided: skip it, as described in section 7.
 4. **Cadence in the Activity view** (2026-11-23). Checked against FIT exports of the same activities: Garmin's TCX states running cadence only in the Activity Extension, with the same values as FIT's `cadence`. Decided: `cadence`, `avg_cadence` and `max_cadence` report the `Cadence` element, else the running cadence. Accepted by the maintainer on 2026-11-23.
 5. **Repeated lap boundary points** (2026-11-23). Garmin's TCX writes the lap boundary trackpoint in both laps, identically; FIT has it once. Decided: the Activity's and sessions' `records` leave out exact repeats; laps and messages keep them. Accepted by the maintainer on 2026-11-23.
+6. **Namespace errors** (2026-11-23). A file whose exporter used an undeclared namespace prefix was rejected outright, although libxml2 reads on. Decided: such namespace errors do not stop reading; the elements involved have no namespace, so their values are untyped fields. Accepted by the maintainer on 2026-11-23.

@@ -192,6 +192,9 @@ module TcxKit
       # there is no more input, and anything unfinished is left for the XML
       # parser to report.
       def scan(buffer, complete:)
+        utf16 = utf16(buffer)
+        return scan(utf16, complete: complete) if utf16
+
         position = buffer.start_with?(Source::BOM) ? Source::BOM.bytesize : 0
         loop do
           position += 1 while position < buffer.bytesize && WHITESPACE.include?(buffer.getbyte(position))
@@ -211,6 +214,27 @@ module TcxKit
 
           position = finish
         end
+      end
+
+      UTF16_LE_BOM = "\xFF\xFE".b.freeze
+      UTF16_BE_BOM = "\xFE\xFF".b.freeze
+      UTF32_LE_BOM = "\xFF\xFE\x00\x00".b.freeze
+
+      # A UTF-8 copy of a UTF-16 buffer (by its byte order mark, or by "<"
+      # followed or preceded by a zero byte), so a DTD in a UTF-16 document
+      # is found too; nil for any other buffer. libxml2 still reads the
+      # original bytes.
+      def utf16(buffer)
+        encoding =
+          if buffer.start_with?(UTF32_LE_BOM) then nil
+          elsif buffer.start_with?(UTF16_LE_BOM) || buffer.start_with?("<\x00".b) then Encoding::UTF_16LE
+          elsif buffer.start_with?(UTF16_BE_BOM) || buffer.start_with?("\x00<".b) then Encoding::UTF_16BE
+          end
+        return unless encoding
+
+        units = buffer.byteslice(0, buffer.bytesize & ~1)
+        units = units.byteslice(2..) if units.start_with?(UTF16_LE_BOM) || units.start_with?(UTF16_BE_BOM)
+        units.dup.force_encoding(encoding).encode(Encoding::UTF_8, invalid: :replace, undef: :replace).b
       end
 
       def after(buffer, terminator, from)

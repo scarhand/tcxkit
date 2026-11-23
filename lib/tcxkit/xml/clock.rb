@@ -14,16 +14,27 @@ module TcxKit
         @paused = 0.0
       end
 
+      # Starts measuring from now.
+      def restart
+        @started = @now.call
+        @paused = 0.0
+      end
+
       def exceeded?
         @max_seconds && (@now.call - @started - @paused) > @max_seconds
       end
 
-      # Runs the caller's block without counting its time.
+      # Runs the caller's block without counting its time. Without a time
+      # limit there is nothing to measure.
       def outside
+        return yield unless @max_seconds
+
         started = @now.call
-        yield
-      ensure
-        @paused += @now.call - started
+        begin
+          yield
+        ensure
+          @paused += @now.call - started
+        end
       end
     end
   end
