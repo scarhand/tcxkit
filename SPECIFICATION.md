@@ -1,6 +1,6 @@
 # TcxKit — Project Specification
 
-**Status:** Approved by the maintainer on 2026-11-20
+**Status:** Approved by the maintainer on 2026-11-20; all milestones done for 0.1.0 (2026-11-23)
 **Project type:** Read-only Ruby library for Garmin Training Center XML (TCX) files
 **Gem name:** `tcxkit` (free on RubyGems on 2026-11-20)
 **Ruby namespace / require path:** `TcxKit` / `require "tcxkit"`
@@ -307,11 +307,11 @@ Names match fitkit's where the meaning matches, so an application can map all th
 
 ## 12. Milestones
 
-- **M0 — Foundation** (this PR): specification, gem skeleton, CI.
-- **M1 — Safe streaming reader:** XML layer, `Limits`, errors, root detection, the leniency rules in section 7, security tests.
-- **M2 — Messages and fields:** the message table in 6.2, schema typing and ranges in 6.3, Activity Extension v2, unknown preservation.
-- **M3 — Activity view:** section 6.4.
-- **M4 — Hardening and release:** quirks from real exporters (reproduced synthetically), a benchmark on a 24-hour file, README examples verified, first release on approval.
+- **M0 — Foundation** (done): specification, gem skeleton, CI.
+- **M1 — Safe streaming reader** (done): XML layer, `Limits`, errors, root detection, the leniency rules in section 7, security tests.
+- **M2 — Messages and fields** (done): the message table in 6.2, schema typing and ranges in 6.3, Activity Extension v2, unknown preservation.
+- **M3 — Activity view** (done): section 6.4.
+- **M4 — Hardening and release** (done; release on approval): quirks from real exporters (reproduced synthetically), a benchmark on a 24-hour file, README examples verified, first release on approval. Also seeded fuzz tests of bytes, markup and values, and reading without Ruby warnings.
 
 ## 13. Decisions (approved 2026-11-20)
 

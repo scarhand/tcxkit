@@ -137,7 +137,12 @@ module TcxKit
     MAX_MAGNITUDE = 400
     MAX_FLOAT = Rational(Float::MAX)
 
+    # XSD allows nothing after the decimal point ("5.", "1.e3"); Ruby before
+    # 3.4 does not, so the missing zero is added before converting.
+    TRAILING_POINT = /\.(?=[eE]|\z)/
+
     def to_float(raw)
+      raw = raw.sub(TRAILING_POINT, ".0") if raw.include?(".")
       magnitude = decimal_magnitude(raw)
       return 0.0 if magnitude.nil?
       return Float(raw) if magnitude.abs < SAFE_MAGNITUDE

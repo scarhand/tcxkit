@@ -2,7 +2,18 @@
 
 A read-only, streaming Ruby parser for Garmin Training Center Database v2 (`.tcx`) files.
 
-**Status: milestone M3 of 4.** The reader streams typed messages for every element of a TCX v2 document, and `Activity` gives sessions, laps and records in fitkit's shape. M4 (hardening and the first release) is next. The full API is in [`SPECIFICATION.md`](SPECIFICATION.md).
+**Status: 0.1.0, the first release.** All four milestones of [`SPECIFICATION.md`](SPECIFICATION.md) are done. The API may still change before 1.0.
+
+## Installation
+
+```ruby
+# Gemfile
+gem "tcxkit"
+```
+
+Requires Ruby 3.1 or newer and Nokogiri 1.17 or newer (the only runtime dependency).
+
+## Usage
 
 ```ruby
 require "tcxkit"
@@ -68,7 +79,21 @@ bundle exec rake test
 
 Requires Ruby 3.1 or newer. The only runtime dependency is Nokogiri.
 
+The suite includes seeded fuzz tests. Longer or different rounds:
+
+```sh
+FUZZ_ITERATIONS=50000 FUZZ_SEED=7 bundle exec ruby -Ilib -Itest test/tcxkit/fuzz_test.rb
+```
+
 Test fixtures must be synthetic. Never commit real activity files: they contain locations, times and health data.
+
+## Performance
+
+Reading streams, so memory stays flat however long the file is (the `Activity` view keeps every message, by design). A one-hour activity reads in well under a second. A synthetic 24-hour file with a trackpoint every second takes about 11 s of CPU time on a laptop; set `limits: { max_seconds: ... }` for untrusted files.
+
+## Releasing
+
+Releases are published by the maintainer: bump `lib/tcxkit/version.rb`, move the changelog's notes under the new version, then `bundle exec rake release`, which builds the gem, tags the commit and pushes the gem to RubyGems.
 
 ## Licence
 

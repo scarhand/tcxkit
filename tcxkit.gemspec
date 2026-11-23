@@ -15,6 +15,7 @@ Gem::Specification.new do |spec|
   spec.metadata = {
     "source_code_uri" => spec.homepage,
     "changelog_uri" => "#{spec.homepage}/blob/main/CHANGELOG.md",
+    "bug_tracker_uri" => "#{spec.homepage}/issues",
     "rubygems_mfa_required" => "true"
   }
   spec.files = Dir.chdir(__dir__) do
@@ -24,5 +25,5 @@ Gem::Specification.new do |spec|
 
   spec.add_dependency "nokogiri", "~> 1.17"
   spec.add_development_dependency "minitest", ">= 5.0", "< 7.0"
-  spec.add_development_dependency "rake", ">= 13.0"
+  spec.add_development_dependency "rake", "~> 13.0"
 end

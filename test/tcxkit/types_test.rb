@@ -28,6 +28,12 @@ class TypesTest < Minitest::Test
     assert_equal 0.0, T.decode(T.double, "0e999999999")[1]
   end
 
+  # Ruby before 3.4 rejects these forms in Float(); XSD allows them.
+  def test_nothing_after_the_decimal_point
+    assert_equal [5.0, 1000.0, -5.0, 0.5], %w[5. 1.e3 -5. .5].map { |text| T.decode(T.double, text)[1] }
+    assert_equal [5.0, 5.0], %w[5. +5.].map { |text| T.decode(T.decimal, text)[1] }
+  end
+
   def test_a_huge_exponent_is_not_computed
     started = Process.clock_gettime(Process::CLOCK_MONOTONIC)
     assert_equal :not_finite, T.decode(T.double, "1e999999999999")[2]
