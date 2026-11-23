@@ -47,8 +47,9 @@ module TcxKit
 
       io, owned = open_io
       begin
-        builder = MessageBuilder.new(&block)
-        XML::Parser.new(io, limits: @limits, source_label: @source_label).each_event do |type, element|
+        parser = XML::Parser.new(io, limits: @limits, source_label: @source_label)
+        builder = MessageBuilder.new { |message| parser.outside { block.call(message) } }
+        parser.each_event do |type, element|
           check_root(element) if type == :start && element.depth == 1
           builder.handle(type, element)
         end

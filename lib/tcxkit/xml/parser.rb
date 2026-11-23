@@ -18,6 +18,15 @@ module TcxKit
         @io = io
         @limits = limits
         @source_label = source_label
+        @clock = Clock.new(limits.max_seconds)
+        @max_elements = limits.max_elements
+        @max_depth = limits.max_depth
+        @max_text_bytes = limits.max_text_bytes
+      end
+
+      # Runs a block without counting its time towards Limits#max_seconds.
+      def outside(&block)
+        @clock.outside(&block)
       end
 
       def each_event(&block)
@@ -25,7 +34,7 @@ module TcxKit
         raise Error.new("A Parser reads once", source: @source_label) if @block
 
         @block = block
-        @clock = Clock.new(@limits.max_seconds)
+        @clock.restart
         @source = Source.new(@io, limits: @limits, source_label: @source_label, clock: @clock)
         @stack = []
         @elements = 0
@@ -55,13 +64,13 @@ module TcxKit
         raise_source_error
         @elements += 1
         check_clock if (@elements % CLOCK_INTERVAL).zero?
-        check_limit(:max_elements, @elements) { |max| "More than #{max} elements" }
+        exceeded(:max_elements, "More than #{@max_elements} elements") if @max_elements && @elements > @max_elements
         depth = @stack.size + 1
-        check_limit(:max_depth, depth) { |max| "Elements nested deeper than #{max}" }
+        exceeded(:max_depth, "Elements nested deeper than #{@max_depth}") if @max_depth && depth > @max_depth
 
         attributes = attrs.empty? ? NO_ATTRIBUTES : attrs.map do |attribute|
-          check_limit(:max_text_bytes, attribute.value.bytesize) do |max|
-            "Attribute #{short(attribute.localname)} is over the #{max}-byte text limit"
+          if @max_text_bytes && attribute.value.bytesize > @max_text_bytes
+            exceeded(:max_text_bytes, "Attribute #{short(attribute.localname)} is over the #{@max_text_bytes}-byte text limit")
           end
           Attribute.new(namespace: attribute.uri, name: attribute.localname, value: attribute.value).freeze
         end.freeze
@@ -93,7 +102,9 @@ module TcxKit
         return unless element
 
         size = element.append_text(string)
-        check_limit(:max_text_bytes, size) { |max| "Text of #{short(element.name)} is over the #{max}-byte limit" }
+        return unless @max_text_bytes && size > @max_text_bytes
+
+        exceeded(:max_text_bytes, "Text of #{short(element.name)} is over the #{@max_text_bytes}-byte limit")
       end
 
       def cdata_block(string)
@@ -118,8 +129,11 @@ module TcxKit
 
       private
 
+      # Events go straight to the block: its time counts as reading time.
+      # The Reader leaves out only the time spent in its caller's block,
+      # through #outside, once per message instead of once per element.
       def emit(type, element)
-        @clock.outside { @block.call(type, element) }
+        @block.call(type, element)
       end
 
       # A file that was cut off makes libxml2 fail at the end of the input,
@@ -143,11 +157,8 @@ module TcxKit
                                      limit: :max_seconds, **position)
       end
 
-      def check_limit(limit, value)
-        max = @limits.public_send(limit)
-        return unless max && value > max
-
-        raise LimitExceededError.new(yield(max), limit: limit, **position)
+      def exceeded(limit, message)
+        raise LimitExceededError.new(message, limit: limit, **position)
       end
 
       def raise_source_error

@@ -19,20 +19,46 @@ module TcxKit
     # Indexes counted across the document; the others count within their parent.
     DOCUMENT_COUNTERS = %i[activity multi_sport_session course author element].freeze
 
-    # path: the element's path inside its message ("" for the message
-    # element), key: the same path in Schema terms, nil once a segment is
-    # outside the schema's namespaces, name: the field name of a leaf.
-    Node = Struct.new(:kind, :element, :frame, :path, :key, :name)
+    # What a node in the element stack is: the root, a container, a message
+    # element (with its Frame) or a field element (with its Shape).
+    Node = Struct.new(:kind, :element, :frame, :shape)
+
+    # Where an element or attribute sits inside a message: its path, schema
+    # key (nil once a segment is outside the schema's namespaces), field name
+    # and type. Every trackpoint has the same few shapes, so they are made
+    # once per message type and reused; a builder makes at most SHAPE_LIMIT,
+    # because unknown names come from the file.
+    class Shape
+      attr_reader :path, :key, :name, :spec, :local_name
+
+      def initialize(path:, key:, name:, spec:, local_name:)
+        @path = path
+        @key = key
+        @name = name
+        @spec = spec
+        @local_name = local_name
+        @children = {}
+        @attributes = {}
+      end
+
+      def child(namespace, name) = @children[namespace]&.[](name)
+      def attribute(namespace, name) = @attributes[namespace]&.[](name)
+      def add_child(namespace, name, shape) = (@children[namespace] ||= {})[name] = shape
+      def add_attribute(namespace, name, shape) = (@attributes[namespace] ||= {})[name] = shape
+    end
+
+    SHAPE_LIMIT = 10_000
 
     # A message being collected.
     class Frame
-      attr_reader :kind, :element, :context, :fields, :table
+      attr_reader :kind, :element, :context, :fields, :table, :shape
 
-      def initialize(kind, element, context, table)
+      def initialize(kind, element, context, table, shape)
         @kind = kind
         @element = element
         @context = context.freeze
         @table = table
+        @shape = shape
         @fields = []
         @counters = Hash.new(0)
       end
@@ -49,15 +75,12 @@ module TcxKit
       end
     end
 
-    # Paths repeat on every trackpoint, so joined paths are cached; the
-    # cache is bounded because unknown element names come from the file.
-    PATH_CACHE_SIZE = 4096
-
     def initialize(&emit)
       @emit = emit
       @nodes = []
       @counters = Hash.new(0)
-      @paths = {}
+      @roots = {}.compare_by_identity
+      @shapes = 0
     end
 
     def handle(type, element)
@@ -68,16 +91,16 @@ module TcxKit
 
     def start(element)
       parent = @nodes.last
-      return @nodes << Node.new(:root, element, nil, "", "") unless parent
+      return @nodes << Node.new(:root, element, nil, nil) unless parent
 
       kind = message_kind(element, parent)
       if kind
         @nodes << open_message(kind, element, parent.frame)
       elsif container?(element, parent)
-        @nodes << Node.new(:container, element, parent.frame, "", "")
+        @nodes << Node.new(:container, element, parent.frame, nil)
       elsif parent.frame
-        node = Node.new(:field, element, parent.frame, join(parent.path, element.name),
-                        join_key(parent.key, segment(element)), field_name(parent, element))
+        frame = parent.frame
+        node = Node.new(:field, element, frame, child_shape(parent.shape || frame.shape, element, frame.table))
         add_attributes(node)
         @nodes << node
       else
@@ -97,32 +120,61 @@ module TcxKit
     def open_message(kind, element, parent_frame)
       index = DOCUMENT_COUNTERS.include?(kind) ? next_document_index(kind) : parent_frame.next_index(kind)
       context = (parent_frame ? parent_frame.context : {}).merge(kind => index)
-      frame = Frame.new(kind, element, context, Schema.table(kind, context))
-      node = Node.new(:message, element, frame, "", "")
+      frame = new_frame(kind, element, context, Schema.table(kind, context))
+      node = Node.new(:message, element, frame, frame.shape)
       add_attributes(node)
       node
     end
 
-    def join(path, segment)
-      return segment if path.empty?
-
-      by_segment = @paths[path] ||= {}
-      cached = by_segment[segment]
-      return cached if cached
-
-      joined = "#{path}/#{segment}".freeze
-      by_segment[segment] = joined if @paths.size < PATH_CACHE_SIZE && by_segment.size < PATH_CACHE_SIZE
-      joined
-    end
-
-    def join_key(key, segment)
-      key && segment && join(key, segment)
+    def new_frame(kind, element, context, table)
+      root = @roots[table] ||= Shape.new(path: "", key: "", name: nil, spec: nil, local_name: nil)
+      Frame.new(kind, element, context, table, root)
     end
 
     def next_document_index(kind)
       index = @counters[kind]
       @counters[kind] += 1
       index
+    end
+
+    # The shape of a child element: the parent's path and key joined with
+    # this element; a Value element takes its parent's name
+    # ("HeartRateBpm/Value" is heart_rate_bpm).
+    def child_shape(parent, element, table)
+      cached = parent.child(element.namespace, element.name)
+      return cached if cached
+
+      local = element.name
+      key = join_key(parent.key, segment(element))
+      named = local == "Value" && parent.local_name ? parent.local_name : local
+      shape = Shape.new(path: join(parent.path, local), key: key, name: Naming.snake_case(named).to_sym,
+                        spec: (key && table[key]) || Types::UNKNOWN, local_name: local)
+      parent.add_child(element.namespace, local, shape) if remember?
+      shape
+    end
+
+    def attribute_shape(parent, attribute, table)
+      cached = parent.attribute(attribute.namespace, attribute.name)
+      return cached if cached
+
+      key = join_key(parent.key, attribute_segment(attribute))
+      shape = Shape.new(path: join(parent.path, "@#{attribute.name}"), key: key,
+                        name: Naming.snake_case(attribute.name).to_sym, spec: (key && table[key]) || Types::UNKNOWN,
+                        local_name: nil)
+      parent.add_attribute(attribute.namespace, attribute.name, shape) if remember?
+      shape
+    end
+
+    def remember?
+      (@shapes += 1) <= SHAPE_LIMIT
+    end
+
+    def join(path, segment)
+      path.empty? ? segment.dup.freeze : "#{path}/#{segment}".freeze
+    end
+
+    def join_key(key, segment)
+      key && segment && join(key, segment)
     end
 
     # Which message an element starts, if any (only TCX v2 elements, where
@@ -159,9 +211,9 @@ module TcxKit
 
     def add_attributes(node)
       node.element.attributes.each do |attribute|
-        add_field(node.frame, path: join(node.path, "@#{attribute.name}"), key: join_key(node.key, attribute_segment(attribute)),
-                              name: Naming.snake_case(attribute.name).to_sym, namespace: attribute.namespace,
-                              text: attribute.value, line: node.element.line)
+        shape = attribute_shape(node.shape, attribute, node.frame.table)
+        node.frame.fields << Field.new(name: shape.name, path: shape.path, namespace: attribute.namespace,
+                                       text: attribute.value, spec: shape.spec, line: node.element.line)
       end
     end
 
@@ -171,21 +223,9 @@ module TcxKit
       return if element.name == "Extensions" && element.text.strip.empty?
       return if element.text.empty? && !element.attributes.empty?
 
-      add_field(node.frame, path: node.path, key: node.key, name: node.name,
-                            namespace: element.namespace, text: element.text, line: element.line)
-    end
-
-    def add_field(frame, path:, key:, name:, namespace:, text:, line:)
-      spec = key && frame.table[key]
-      frame.fields << Field.new(name: name, path: path, namespace: namespace, text: text,
-                                spec: spec || Types::UNKNOWN, line: line)
-    end
-
-    # The element's name in snake_case; a Value element takes its parent's
-    # name ("HeartRateBpm/Value" is heart_rate_bpm).
-    def field_name(parent, element)
-      name = element.name == "Value" && parent.kind == :field ? parent.element.name : element.name
-      Naming.snake_case(name).to_sym
+      shape = node.shape
+      node.frame.fields << Field.new(name: shape.name, path: shape.path, namespace: element.namespace,
+                                     text: element.text, spec: shape.spec, line: element.line)
     end
 
     # The schema key of an element, or nil for a namespace the schema does
@@ -205,8 +245,8 @@ module TcxKit
     end
 
     def document_message(element)
-      frame = Frame.new(:document, element, {}, Schema::EMPTY)
-      add_attributes(Node.new(:message, element, frame, "", ""))
+      frame = new_frame(:document, element, {}, Schema::EMPTY)
+      add_attributes(Node.new(:message, element, frame, frame.shape))
       frame.to_message
     end
   end
