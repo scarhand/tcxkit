@@ -11,7 +11,7 @@ class FuzzTest < Minitest::Test
   SEED = Integer(ENV.fetch("FUZZ_SEED", "20261123"))
 
   DOCUMENTS = [
-    File.binread(Documents.fixture("activity.tcx")),
+    File.read(Documents.fixture("activity.tcx"), encoding: "UTF-8"),
     Documents.tcx(%(<Activities><MultiSportSession><Id>2026-01-01T08:00:00Z</Id><FirstSport><Activity Sport="Running">
       <Id>2026-01-01T08:00:00Z</Id><Lap StartTime="2026-01-01T08:00:00Z"><TotalTimeSeconds>1</TotalTimeSeconds>
       <DistanceMeters>1</DistanceMeters><Calories>1</Calories><Intensity>Active</Intensity><TriggerMethod>Manual</TriggerMethod>
