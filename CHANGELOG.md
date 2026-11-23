@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.1.1
+
+Fixes from an external review.
+
+- `Activity#records` and `Session#records` left out more than the repeated lap boundary trackpoints of decision 5: identical consecutive trackpoints inside one lap, at the end of one session and the start of the next, and in different extension namespaces. Now only a lap's first trackpoint that exactly repeats the previous lap's last one in the same session is left out, and namespaces count when comparing.
+- A UTF-8 byte order mark split across reads, from an IO that hands over a few bytes at a time, made a valid file invalid; so did a UTF-16 file read a byte at a time. The reader now reads such an IO until it has the bytes asked for, and the DTD check waits for a whole byte order mark. Files and `StringIO` were not affected, and a DTD was never parsed.
+- Decision 4 now says that an invalid `Cadence` falls back to the running cadence, as it already did.
+- `bench/read_24h.rb` reproduces the README's timing on a synthetic 24-hour file.
+
 ## 0.1.0
 
 First release: a read-only, streaming reader for Garmin Training Center Database v2 files, with typed messages and fields, enforced limits, refusal of DTDs, and an `Activity` view in the shape of `FitKit::Activity`. Requires Ruby 3.1 and Nokogiri 1.17.

@@ -95,6 +95,18 @@ class LimitsTest < Minitest::Test
     assert_limit(:max_seconds) { Documents.read(xml, limits: { max_seconds: 0.001 }) }
   end
 
+  def test_max_seconds_counts_an_input_that_trickles_in
+    slow = Class.new(Documents::ShortReads) do
+      def read(*)
+        sleep 0.001
+        super
+      end
+    end
+    xml = Documents.tcx("<a/>" * 1000)
+
+    assert_limit(:max_seconds) { TcxKit::Reader.new(slow.new(xml, 1), limits: { max_seconds: 0.05 }).each_message { |*| nil } }
+  end
+
   private
 
   def assert_limit(limit, &block)

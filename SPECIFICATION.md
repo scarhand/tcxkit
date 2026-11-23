@@ -88,7 +88,7 @@ end
 
 Same contract as `FitKit::Reader`:
 
-- `Reader.new(source, close_io: false, source_label: nil, limits: Limits::DEFAULT)`. `source` is a path, a `Pathname` or an IO-like object that responds to `read`. A `Pathname` is read as a path even though it responds to `read`.
+- `Reader.new(source, close_io: false, source_label: nil, limits: Limits::DEFAULT)`. `source` is a path, a `Pathname` or an IO-like object that responds to `read`. A `Pathname` is read as a path even though it responds to `read`. An IO that hands over fewer bytes than asked for (a socket, a decompressing stream) is read again until it has them or ends, so it reads the same as a file.
 - `each_message` streams, and returns an Enumerator without a block.
 - Seekable sources can be iterated again; a non-seekable IO can be read once, and a second iteration raises `Error`.
 - Caller-owned IO is closed only with `close_io: true`.
@@ -234,9 +234,9 @@ Courses are not activities: their laps and trackpoints are not in `laps` or `rec
 
 `activity.sport` is the TCX `Sport_t` value. Mapping it to an application's sports is the caller's job.
 
-**Cadence** (decision 4). Garmin writes cycling cadence in `Cadence` and running cadence in the Activity Extension (`TPX RunCadence`, `LX AvgRunCadence`). `cadence`, `avg_cadence` and `max_cadence` report whichever is stated, as fitkit's `cadence` does for both sports; the running-specific methods stay available.
+**Cadence** (decision 4). Garmin writes cycling cadence in `Cadence` and running cadence in the Activity Extension (`TPX RunCadence`, `LX AvgRunCadence`). `cadence`, `avg_cadence` and `max_cadence` report whichever is stated, as fitkit's `cadence` does for both sports; the running-specific methods stay available. The `Cadence` element counts only when its value is valid: an out-of-range `Cadence` (`255`) falls back to the running cadence, as gpxkit's sources do, and the invalid field stays on the message with its reason.
 
-**Repeated lap boundary points** (decision 5). Garmin repeats the trackpoint at a lap boundary as the last point of one lap and the first of the next. `activity.records` and `session.records` leave out a trackpoint that exactly repeats the one before it (the same time and the same fields, as written); `lap.records` and the messages keep every one. A trackpoint at the same time with any different value is kept.
+**Repeated lap boundary points** (decision 5). Garmin repeats the trackpoint at a lap boundary as the last point of one lap and the first of the next. `activity.records` and `session.records` leave out a lap's first trackpoint when it exactly repeats the last trackpoint of the lap before it in the same session: the same time and the same fields (namespace, path and text, as written, in order). `lap.records` and the messages keep every one. Nothing else is left out: identical trackpoints inside one lap, in different sessions or with any different value are all kept.
 
 ## 7. Leniency and strictness
 
@@ -318,6 +318,6 @@ Names match fitkit's where the meaning matches, so an application can map all th
 1. **Times without a UTC offset.** The schema's `xsd:dateTime` allows them; their time zone is unknown. Decided: `value` nil, `invalid_reason` `:no_utc_offset`, raw text kept, so the gem never guesses a zone.
 2. **Session totals.** TCX has no activity-level totals. Decided: `Session#total_timer_time`, `total_distance` and `total_calories` are the sum of the laps' stated values when every lap states it, otherwise nil; `max_heart_rate` and `max_speed` the largest lap value, under the same rule that every lap states one (refined 2026-11-23: otherwise the largest of the others could understate the session's); averages nil. Documented as sums of stated values.
 3. **Whitespace before the XML declaration.** Decided: skip it, as described in section 7.
-4. **Cadence in the Activity view** (2026-11-23). Checked against FIT exports of the same activities: Garmin's TCX states running cadence only in the Activity Extension, with the same values as FIT's `cadence`. Decided: `cadence`, `avg_cadence` and `max_cadence` report the `Cadence` element, else the running cadence. Accepted by the maintainer on 2026-11-23.
-5. **Repeated lap boundary points** (2026-11-23). Garmin's TCX writes the lap boundary trackpoint in both laps, identically; FIT has it once. Decided: the Activity's and sessions' `records` leave out exact repeats; laps and messages keep them. Accepted by the maintainer on 2026-11-23.
+4. **Cadence in the Activity view** (2026-11-23). Checked against FIT exports of the same activities: Garmin's TCX states running cadence only in the Activity Extension, with the same values as FIT's `cadence`. Decided: `cadence`, `avg_cadence` and `max_cadence` report the `Cadence` element, else the running cadence. Accepted by the maintainer on 2026-11-23. Clarified for 0.1.1 (accepted 2026-11-23): an invalid `Cadence` counts as not stated, so the running cadence is used, as in gpxkit's decision 2.
+5. **Repeated lap boundary points** (2026-11-23). Garmin's TCX writes the lap boundary trackpoint in both laps, identically; FIT has it once. Decided: the Activity's and sessions' `records` leave out exact repeats; laps and messages keep them. Accepted by the maintainer on 2026-11-23. Narrowed for 0.1.1 (accepted 2026-11-23): 0.1.0 also left out identical consecutive trackpoints inside a lap, across sessions, and in different extension namespaces; now only a lap's first trackpoint that repeats the previous lap's last one in the same session is left out.
 6. **Namespace errors** (2026-11-23). A file whose exporter used an undeclared namespace prefix was rejected outright, although libxml2 reads on. Decided: such namespace errors do not stop reading; the elements involved have no namespace, so their values are untyped fields. Accepted by the maintainer on 2026-11-23.

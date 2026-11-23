@@ -156,6 +156,46 @@ class ActivityTest < Minitest::Test
     assert_equal [120, 121], read(xml).records.map(&:heart_rate)
   end
 
+  def test_identical_trackpoints_inside_a_lap_are_kept
+    xml = Documents.tcx(%(<Activities><Activity Sport="Running"><Id>2026-01-01T08:00:00Z</Id>
+      #{lap('2026-01-01T08:00:00Z', points: point('2026-01-01T08:00:00Z') * 2)}
+    </Activity></Activities>))
+    activity = read(xml)
+
+    assert_equal 2, activity.records.size
+    assert_equal 2, activity.session.records.size
+  end
+
+  def test_identical_trackpoints_in_different_sessions_are_kept
+    session = %(<Activity Sport="Running"><Id>2026-01-01T08:00:00Z</Id>#{lap('2026-01-01T08:00:00Z', points: point('2026-01-01T08:00:00Z'))}</Activity>)
+    activity = read(Documents.tcx("<Activities>#{session * 2}</Activities>"))
+
+    assert_equal [1, 1], activity.sessions.map { |each| each.records.size }
+    assert_equal 2, activity.records.size
+  end
+
+  def test_a_boundary_trackpoint_in_another_namespace_is_kept
+    tpx = ->(namespace) { point('2026-01-01T08:01:00Z').sub("</Trackpoint>", %(<Extensions><TPX xmlns="#{namespace}"><Speed>3</Speed></TPX></Extensions></Trackpoint>)) }
+    xml = Documents.tcx(%(<Activities><Activity Sport="Running"><Id>2026-01-01T08:00:00Z</Id>
+      #{lap('2026-01-01T08:00:00Z', points: tpx.call(TcxKit::ACTIVITY_EXTENSION_NAMESPACE))}
+      #{lap('2026-01-01T08:01:00Z', points: tpx.call('urn:other'))}
+    </Activity></Activities>))
+    activity = read(xml)
+
+    assert_equal 2, activity.records.size
+    assert_equal 2, activity.session.records.size
+  end
+
+  def test_an_invalid_cadence_falls_back_to_the_running_cadence
+    xml = Documents.trackpoint(%(<Time>2026-01-01T08:00:00Z</Time><Cadence>255</Cadence>
+      <Extensions><TPX xmlns="#{TcxKit::ACTIVITY_EXTENSION_NAMESPACE}"><RunCadence>80</RunCadence></TPX></Extensions>))
+    record = read(xml).records.first
+
+    assert_equal :out_of_range, record.raw_message.field(:cadence).invalid_reason
+    assert_nil record.raw_message[:cadence]
+    assert_equal 80, record.cadence
+  end
+
   def test_multisport_sessions_and_transitions
     xml = Documents.tcx(%(<Activities><MultiSportSession><Id>2026-01-01T08:00:00Z</Id>
       <FirstSport><Activity Sport="Running"><Id>2026-01-01T08:00:00Z</Id>#{lap('2026-01-01T08:00:00Z', points: point('2026-01-01T08:00:00Z'))}</Activity></FirstSport>
