@@ -15,6 +15,7 @@ require_relative "tcxkit/field"
 require_relative "tcxkit/message"
 require_relative "tcxkit/message_builder"
 require_relative "tcxkit/reader"
+require_relative "tcxkit/activity"
 
 # A read-only, streaming parser for Garmin Training Center Database v2 files.
 # See SPECIFICATION.md for the API and what each milestone delivers.
