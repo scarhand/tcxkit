@@ -170,55 +170,73 @@ The shared shape across fitkit, tcxkit and gpxkit:
 
 ```ruby
 activity = TcxKit::Activity.read("activity.tcx", limits: { max_seconds: 30 })
+# also Activity.from_file(path) and Activity.from_io(io); options go to Reader.new
 
-activity.sessions   # one per <Activity> element
-activity.laps       # every lap, in file order
-activity.records    # every trackpoint, in file order
-activity.messages   # every Message
-activity.session    # first session
-activity.creator    # first session's Creator, or nil
+activity.sessions             # one per <Activity> element, multisport ones included
+activity.laps                 # every activity lap, in file order
+activity.transitions          # multisport transitions, as laps
+activity.records              # every activity trackpoint, in file order (see below)
+activity.multi_sport_sessions # :multi_sport_session messages
+activity.author               # the :author message, or nil
+activity.messages             # every Message
+activity.session              # the first session
+activity.creator              # the first session's :creator message, or nil
 
-activity.sport
-activity.start_time
-activity.total_timer_time
+# Summary methods read the first session, as in fitkit:
+activity.sport                # :running, :biking or :other
+activity.start_time           # the first lap's StartTime
+activity.end_time             # the last valid trackpoint time of the last session
+activity.total_timer_time     # sums of stated lap values (decision 2)
 activity.total_distance
 activity.total_calories
+activity.max_heart_rate       # the largest stated lap value (decision 2)
+activity.max_speed
+activity.num_laps
 
-record = activity.records.first
-record.timestamp    # Time (UTC)
-record.latitude     # degrees
-record.longitude
-record.altitude     # m
-record.distance     # m, as stated by the file
-record.heart_rate   # bpm
-record.cadence      # rpm, the Cadence element
-record.run_cadence  # TPX RunCadence, as stated
-record.speed        # m/s, TPX Speed
-record.power        # W, TPX Watts
-record.raw_message
+session = activity.session
+session.id, session.notes, session.laps, session.records, session.creator
+session.multi_sport_session   # index of its multisport session, or nil
 
 lap = activity.laps.first
 lap.start_time
-lap.total_timer_time  # TotalTimeSeconds
-lap.total_distance    # DistanceMeters
+lap.total_timer_time          # TotalTimeSeconds
+lap.total_distance            # DistanceMeters
 lap.max_speed
 lap.total_calories
 lap.avg_heart_rate
 lap.max_heart_rate
-lap.avg_cadence
-lap.intensity
-lap.trigger_method
-lap.avg_speed         # LX
-lap.avg_power         # LX AvgWatts
-lap.max_power         # LX MaxWatts
-lap.records           # this lap's trackpoints
+lap.avg_cadence               # Cadence, else LX AvgRunCadence
+lap.max_cadence               # LX MaxBikeCadence, else LX MaxRunCadence
+lap.avg_run_cadence, lap.max_run_cadence, lap.steps
+lap.avg_speed                 # LX AvgSpeed
+lap.avg_power, lap.max_power  # LX AvgWatts, MaxWatts
+lap.intensity, lap.trigger_method, lap.notes
+lap.transition?
+lap.records                   # this lap's trackpoints, every one
+
+record = activity.records.first
+record.timestamp              # Time (UTC)
+record.latitude, record.longitude  # degrees
+record.altitude               # m
+record.distance               # m, as stated
+record.heart_rate             # bpm
+record.cadence                # Cadence, else TPX RunCadence
+record.run_cadence            # TPX RunCadence
+record.speed                  # m/s, TPX Speed
+record.power                  # W, TPX Watts
+record.sensor_state, record.cadence_sensor
+record.raw_message
 ```
 
-Method names match `FitKit::Activity` wherever the meaning matches. A TCX `Lap` has a single `TotalTimeSeconds` and no elapsed time, so `total_elapsed_time` is `nil` instead of borrowing the timer time. Every value is reported in SI units and as the file states it; nothing is computed from positions or timestamps.
+Method names match `FitKit::Activity` wherever the meaning matches; methods for what TCX never states return `nil`: a session's averages, ascent and descent, elapsed time (a TCX lap has a single `TotalTimeSeconds`), `sub_sport`, and a record's `grade` and `temperature`. Every value is reported in SI units and as the file states it; nothing is computed from positions or timestamps. Values are read by schema path, so an unknown element at the same path is never used, and an invalid value is `nil`.
 
-`activity.sport` is `:running`, `:biking` or `:other`, the TCX `Sport_t` value. Mapping it to an application's sports is the caller's job.
+Courses are not activities: their laps and trackpoints are not in `laps` or `records` (they stay in `messages`).
 
-Session totals: TCX states totals only per lap. See decision 2 in section 13.
+`activity.sport` is the TCX `Sport_t` value. Mapping it to an application's sports is the caller's job.
+
+**Cadence** (decision 4). Garmin writes cycling cadence in `Cadence` and running cadence in the Activity Extension (`TPX RunCadence`, `LX AvgRunCadence`). `cadence`, `avg_cadence` and `max_cadence` report whichever is stated, as fitkit's `cadence` does for both sports; the running-specific methods stay available.
+
+**Repeated lap boundary points** (decision 5). Garmin repeats the trackpoint at a lap boundary as the last point of one lap and the first of the next. `activity.records` and `session.records` leave out a trackpoint that exactly repeats the one before it (the same time and the same fields, as written); `lap.records` and the messages keep every one. A trackpoint at the same time with any different value is kept.
 
 ## 7. Leniency and strictness
 
@@ -293,3 +311,5 @@ Names match fitkit's where the meaning matches, so an application can map all th
 1. **Times without a UTC offset.** The schema's `xsd:dateTime` allows them; their time zone is unknown. Decided: `value` nil, `invalid_reason` `:no_utc_offset`, raw text kept, so the gem never guesses a zone.
 2. **Session totals.** TCX has no activity-level totals. Decided: `Session#total_timer_time`, `total_distance` and `total_calories` are the sum of the laps' stated values when every lap states it, otherwise nil; `max_heart_rate` and `max_speed` the largest lap value; averages nil. Documented as sums of stated values.
 3. **Whitespace before the XML declaration.** Decided: skip it, as described in section 7.
+4. **Cadence in the Activity view** (2026-11-23). Checked against FIT exports of the same activities: Garmin's TCX states running cadence only in the Activity Extension, with the same values as FIT's `cadence`. Decided: `cadence`, `avg_cadence` and `max_cadence` report the `Cadence` element, else the running cadence. Pending the maintainer's review in the M3 pull request.
+5. **Repeated lap boundary points** (2026-11-23). Garmin's TCX writes the lap boundary trackpoint in both laps, identically; FIT has it once. Decided: the Activity's and sessions' `records` leave out exact repeats; laps and messages keep them. Pending the maintainer's review in the M3 pull request.

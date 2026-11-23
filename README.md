@@ -2,7 +2,24 @@
 
 A read-only, streaming Ruby parser for Garmin Training Center Database v2 (`.tcx`) files.
 
-**Status: milestone M2 of 4.** The reader streams typed messages for every trackpoint, lap, activity and the rest of a TCX v2 document. The `Activity` view arrives in M3. The full API is in [`SPECIFICATION.md`](SPECIFICATION.md).
+**Status: milestone M3 of 4.** The reader streams typed messages for every element of a TCX v2 document, and `Activity` gives sessions, laps and records in fitkit's shape. M4 (hardening and the first release) is next. The full API is in [`SPECIFICATION.md`](SPECIFICATION.md).
+
+```ruby
+require "tcxkit"
+
+activity = TcxKit::Activity.read("activity.tcx", limits: { max_seconds: 30 })
+puts "#{activity.sport}: #{activity.total_distance} m in #{activity.total_timer_time} s"
+
+activity.laps.each do |lap|
+  puts "lap: #{lap.total_timer_time} s, #{lap.total_distance} m, avg #{lap.avg_heart_rate} bpm"
+end
+
+activity.records.each do |record|
+  puts [record.timestamp, record.latitude, record.longitude, record.heart_rate, record.cadence, record.power].inspect
+end
+```
+
+The low-level reader yields one message per element:
 
 ```ruby
 require "tcxkit"
@@ -33,15 +50,7 @@ rescue TcxKit::TruncatedFileError, TcxKit::InvalidFileError, TcxKit::Unsupported
        TcxKit::UnsafeContentError, TcxKit::LimitExceededError => error
 ```
 
-TcxKit is a sister project of [fitkit](https://github.com/scarhand/fitkit) (FIT) and [gpxkit](https://github.com/scarhand/gpxkit) (GPX), and shares their API shape. The activity view is planned for M3:
-
-```ruby
-require "tcxkit"
-
-# Activity view: sessions, laps and records
-activity = TcxKit::Activity.read("activity.tcx")
-activity.records.each { |record| puts [record.timestamp, record.latitude, record.longitude].inspect }
-```
+TcxKit is a sister project of [fitkit](https://github.com/scarhand/fitkit) (FIT) and [gpxkit](https://github.com/scarhand/gpxkit) (GPX), and shares their API shape: the same reader contract and limits, matching error classes, and an `Activity` view with fitkit's method names.
 
 ## Principles
 
